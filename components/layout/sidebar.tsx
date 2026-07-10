@@ -25,6 +25,13 @@ import {
   AlertTriangle,
   History,
   Users,
+  ClipboardPlus,
+  Store,
+  Truck,
+  MessageSquare,
+  FileBarChart2,
+  PackageCheck,
+  Bell,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -55,6 +62,13 @@ const iconMap: Record<string, LucideIcon> = {
   AlertTriangle,
   History,
   Users,
+  ClipboardPlus,
+  Store,
+  Truck,
+  MessageSquare,
+  FileBarChart2,
+  PackageCheck,
+  Bell,
 }
 
 function NavIcon({ name, className }: { name: string; className?: string }) {

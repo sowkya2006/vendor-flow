@@ -1,13 +1,11 @@
 // ============================================================
 // VendorFlow — Navigation Configuration
-// All sidebar nav items are defined here and referenced by
-// the Sidebar component. No nav logic lives in components.
 // ============================================================
 
 export interface NavItem {
   label: string
   href: string
-  iconName: string // Lucide icon name
+  iconName: string
   badge?: string | number
   children?: NavItem[]
 }
@@ -26,7 +24,9 @@ export const mainNav: NavGroup[] = [
   {
     label: 'Procurement',
     items: [
+      { label: 'Purchase Requests', href: '/procurement', iconName: 'ClipboardPlus' },
       { label: 'Vendors', href: '/vendors', iconName: 'Building2' },
+      { label: 'Marketplace', href: '/vendors/marketplace', iconName: 'Store' },
       { label: 'Products', href: '/products', iconName: 'Package' },
       { label: 'RFQs', href: '/rfqs', iconName: 'FileText' },
       { label: 'Quotations', href: '/quotations', iconName: 'FileSearch' },
@@ -37,6 +37,9 @@ export const mainNav: NavGroup[] = [
     label: 'Operations',
     items: [
       { label: 'Inventory', href: '/inventory', iconName: 'Warehouse' },
+      { label: 'Order Tracking', href: '/order-tracking', iconName: 'Truck' },
+      { label: 'Warehouses', href: '/inventory/warehouses', iconName: 'PackageCheck' },
+      { label: 'GRN', href: '/inventory/grn', iconName: 'ClipboardList' },
     ],
   },
   {
@@ -48,6 +51,13 @@ export const mainNav: NavGroup[] = [
       { label: 'Overdue', href: '/payments/overdue', iconName: 'AlertTriangle' },
       { label: 'Payment History', href: '/payments/history', iconName: 'History' },
       { label: 'Vendor Balances', href: '/payments/vendors', iconName: 'Building2' },
+    ],
+  },
+  {
+    label: 'Collaboration',
+    items: [
+      { label: 'Messages', href: '/communication', iconName: 'MessageSquare' },
+      { label: 'Notifications', href: '/notifications', iconName: 'Bell' },
     ],
   },
   {
@@ -68,6 +78,7 @@ export const mainNav: NavGroup[] = [
       { label: 'Inventory', href: '/analytics/inventory', iconName: 'Warehouse' },
       { label: 'Finance', href: '/analytics/finance', iconName: 'CreditCard' },
       { label: 'Approvals', href: '/analytics/approvals', iconName: 'ClipboardList' },
+      { label: 'Reports', href: '/reports', iconName: 'FileBarChart2' },
     ],
   },
   {

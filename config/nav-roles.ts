@@ -22,25 +22,33 @@ const ROLE_ALLOWED_HREFS: Record<RoleSlug, string[] | '*'> = {
 
   procurement_manager: [
     '/dashboard',
-    '/vendors', '/products', '/rfqs', '/quotations', '/purchase-orders',
-    '/inventory',
+    '/procurement',
+    '/vendors', '/vendors/marketplace', '/products', '/rfqs', '/quotations', '/purchase-orders',
+    '/inventory', '/order-tracking',
+    '/communication', '/notifications',
     '/approvals', '/approvals/pending', '/approval-workflows', '/audit-log',
     '/analytics', '/analytics/procurement', '/analytics/vendors',
     '/analytics/inventory', '/analytics/approvals',
+    '/reports',
     '/settings',
   ],
 
   procurement_officer: [
     '/dashboard',
-    '/vendors', '/rfqs', '/quotations', '/purchase-orders', '/products',
+    '/procurement',
+    '/vendors', '/vendors/marketplace', '/rfqs', '/quotations', '/purchase-orders', '/products',
+    '/order-tracking',
+    '/communication', '/notifications',
     '/analytics', '/analytics/procurement',
     '/settings',
   ],
 
   warehouse_manager: [
     '/dashboard',
-    '/inventory',
+    '/procurement',
+    '/inventory', '/inventory/warehouses', '/inventory/grn', '/order-tracking',
     '/products',
+    '/notifications',
     '/analytics', '/analytics/inventory',
     '/settings',
   ],
@@ -49,13 +57,17 @@ const ROLE_ALLOWED_HREFS: Record<RoleSlug, string[] | '*'> = {
     '/dashboard',
     '/payments', '/payments/invoices', '/payments/outstanding',
     '/payments/overdue', '/payments/history', '/payments/vendors',
+    '/communication', '/notifications',
     '/analytics', '/analytics/finance',
+    '/reports',
     '/settings',
   ],
 
   member: [
     '/dashboard',
+    '/procurement',
     '/vendors', '/rfqs', '/quotations', '/purchase-orders', '/products',
+    '/notifications',
     '/settings',
   ],
 
@@ -64,6 +76,8 @@ const ROLE_ALLOWED_HREFS: Record<RoleSlug, string[] | '*'> = {
     '/analytics',
     '/analytics/procurement', '/analytics/vendors',
     '/analytics/inventory', '/analytics/finance', '/analytics/approvals',
+    '/reports',
+    '/notifications',
   ],
 }
 
