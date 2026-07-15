@@ -12,6 +12,7 @@ import {
   addApprovalComment,
   markNotificationsRead,
   getEntityRecords,
+  getApprovalRequestById,
 } from '@/lib/supabase/approvals'
 import {
   createApprovalRequestSchema,
@@ -21,6 +22,8 @@ import {
 import type { CreateApprovalRequestValues } from '@/lib/validations/approval'
 import type { ApprovalEntityType } from '@/types/approval'
 import type { EntityRecord } from '@/lib/supabase/approvals'
+import { syncEntityStatusAfterApproval } from '@/lib/supabase/auto-approve'
+import { guardPermission } from '@/lib/supabase/permission-guard'
 
 // ---------------------------------------------------------------------------
 // Helper — authenticated user (cached per request via get-auth)
@@ -82,7 +85,30 @@ export async function approveStepAction(
 ) {
   const user = await getUser()
   const companyId = await getCompanyId()
+  // Load the request to know what entity type we're approving
+  const req = await getApprovalRequestById(requestId, companyId)
+  if (req) {
+    const permMap: Partial<Record<string, string>> = {
+      rfq: 'approve_rfqs',
+      quotation: 'approve_quotations',
+      purchase_order: 'approve_purchase_orders',
+    }
+    const neededPerm = permMap[req.entity_type]
+    if (neededPerm) await guardPermission(neededPerm)
+  }
   await approveStep(requestId, stepId, companyId, user.id, comment, isInternal)
+
+  // Sync entity status if the whole request is now fully approved
+  const updatedRequest = await getApprovalRequestById(requestId, companyId)
+  if (updatedRequest?.status === 'approved' && updatedRequest.entity_id) {
+    await syncEntityStatusAfterApproval(
+      companyId,
+      updatedRequest.entity_type as ApprovalEntityType,
+      updatedRequest.entity_id,
+      'approved',
+    )
+  }
+
   redirect(`/approvals/${requestId}`)
 }
 
@@ -100,6 +126,18 @@ export async function rejectRequestAction(
   const user = await getUser()
   const companyId = await getCompanyId()
   await rejectRequest(requestId, stepId, companyId, user.id, parsed.data.reason)
+
+  // Sync entity status to rejected
+  const updatedRequest = await getApprovalRequestById(requestId, companyId)
+  if (updatedRequest?.entity_id) {
+    await syncEntityStatusAfterApproval(
+      companyId,
+      updatedRequest.entity_type as ApprovalEntityType,
+      updatedRequest.entity_id,
+      'rejected',
+    )
+  }
+
   redirect(`/approvals/${requestId}`)
 }
 
@@ -117,6 +155,18 @@ export async function returnRequestAction(
   const user = await getUser()
   const companyId = await getCompanyId()
   await returnRequest(requestId, stepId, companyId, user.id, parsed.data.reason)
+
+  // Sync entity status back to draft so the creator can revise
+  const updatedRequest = await getApprovalRequestById(requestId, companyId)
+  if (updatedRequest?.entity_id) {
+    await syncEntityStatusAfterApproval(
+      companyId,
+      updatedRequest.entity_type as ApprovalEntityType,
+      updatedRequest.entity_id,
+      'returned',
+    )
+  }
+
   redirect(`/approvals/${requestId}`)
 }
 

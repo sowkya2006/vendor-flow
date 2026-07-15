@@ -118,9 +118,10 @@ interface POListProps {
   total: number
   hasNextPage: boolean
   page: number
+  canCreate?: boolean
 }
 
-export function POList({ orders, total, hasNextPage, page }: POListProps) {
+export function POList({ orders, total, hasNextPage, page, canCreate = true }: POListProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
@@ -184,12 +185,14 @@ export function POList({ orders, total, hasNextPage, page }: POListProps) {
             </SelectContent>
           </Select>
 
-          <Button asChild size="default">
-            <Link href="/purchase-orders/new">
-              <Plus className="h-4 w-4" />
-              New PO
-            </Link>
-          </Button>
+          {canCreate && (
+            <Button asChild size="default">
+              <Link href="/purchase-orders/new">
+                <Plus className="h-4 w-4" />
+                New PO
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -214,10 +217,12 @@ export function POList({ orders, total, hasNextPage, page }: POListProps) {
           description={
             hasFilters
               ? 'Try adjusting your search or filters.'
-              : 'Create your first purchase order to start tracking procurement.'
+              : canCreate
+                ? 'Create your first purchase order to start tracking procurement.'
+                : 'No purchase orders to approve yet. They will appear here once raised.'
           }
           action={
-            !hasFilters ? (
+            !hasFilters && canCreate ? (
               <Button asChild>
                 <Link href="/purchase-orders/new">
                   <Plus className="h-4 w-4" />

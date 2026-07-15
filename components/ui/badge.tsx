@@ -3,26 +3,38 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-[--color-ring] focus:ring-offset-2',
+  'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[--color-ring] focus:ring-offset-2 select-none',
   {
     variants: {
       variant: {
         default:
-          'border-transparent bg-[--color-primary] text-[--color-primary-foreground]',
+          'bg-[--color-primary] text-[--color-primary-foreground]',
         secondary:
-          'border-transparent bg-[--color-secondary] text-[--color-secondary-foreground]',
+          'bg-[--color-secondary] text-[--color-secondary-foreground] border border-[--color-border]',
         destructive:
-          'border-transparent bg-[--color-destructive] text-[--color-destructive-foreground]',
+          'bg-[--color-error-bg] text-[--color-error] border border-[--color-error-border]',
         outline:
-          'text-[--color-foreground]',
+          'border border-[--color-border] text-[--color-foreground] bg-transparent',
         success:
-          'border-transparent bg-[--color-success-bg] text-[--color-success]',
+          'bg-[--color-success-bg] text-[--color-success] border border-[--color-success-border]',
         warning:
-          'border-transparent bg-[--color-warning-bg] text-[--color-warning]',
+          'bg-[--color-warning-bg] text-[--color-warning] border border-[--color-warning-border]',
         error:
-          'border-transparent bg-[--color-error-bg] text-[--color-error]',
+          'bg-[--color-error-bg] text-[--color-error] border border-[--color-error-border]',
         info:
-          'border-transparent bg-[--color-info-bg] text-[--color-info]',
+          'bg-[--color-info-bg] text-[--color-info] border border-[--color-info-border]',
+        // Solid variants for stronger emphasis
+        'solid-success':
+          'bg-[--color-success] text-white',
+        'solid-warning':
+          'bg-[--color-warning] text-white',
+        'solid-error':
+          'bg-[--color-error] text-white',
+        'solid-info':
+          'bg-[--color-info] text-white',
+        // Muted / ghost
+        muted:
+          'bg-[--color-background-muted] text-[--color-foreground-muted]',
       },
     },
     defaultVariants: {
@@ -33,10 +45,28 @@ const badgeVariants = cva(
 
 export interface BadgeProps
   extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof badgeVariants> {}
+    VariantProps<typeof badgeVariants> {
+  dot?: boolean
+}
 
-function Badge({ className, variant, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />
+function Badge({ className, variant, dot, children, ...props }: BadgeProps) {
+  return (
+    <div className={cn(badgeVariants({ variant }), className)} {...props}>
+      {dot && (
+        <span
+          className={cn(
+            'inline-block h-1.5 w-1.5 rounded-full shrink-0',
+            variant === 'success' || variant === 'solid-success' ? 'bg-[--color-success]' :
+            variant === 'warning' || variant === 'solid-warning' ? 'bg-[--color-warning]' :
+            variant === 'error' || variant === 'destructive' || variant === 'solid-error' ? 'bg-[--color-error]' :
+            variant === 'info' || variant === 'solid-info' ? 'bg-[--color-info]' :
+            'bg-current'
+          )}
+        />
+      )}
+      {children}
+    </div>
+  )
 }
 
 export { Badge, badgeVariants }

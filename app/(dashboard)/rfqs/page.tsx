@@ -5,6 +5,8 @@ import { PageContainer } from '@/components/shared/page-container'
 import { Skeleton } from '@/components/shared/loading-states'
 import { getRFQs } from '@/lib/supabase/rfqs'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
+import { canCreateRFQ } from '@/config/nav-roles'
 import type { RFQStatus, RFQPriority } from '@/types/rfq'
 
 // ── Stat cards ────────────────────────────────────────────────────────────────
@@ -92,17 +94,10 @@ async function RFQStats({ companyId }: { companyId: string }) {
 }
 
 async function RFQListServer({
-  companyId,
-  search,
-  status,
-  priority,
-  page,
+  companyId, search, status, priority, page, canCreate,
 }: {
-  companyId: string
-  search: string
-  status: string
-  priority: string
-  page: number
+  companyId: string; search: string; status: string
+  priority: string; page: number; canCreate: boolean
 }) {
   const result = await getRFQs(companyId, {
     search: search || undefined,
@@ -118,6 +113,7 @@ async function RFQListServer({
       total={result.total}
       hasNextPage={result.hasNextPage}
       page={result.page}
+      canCreate={canCreate}
     />
   )
 }
@@ -131,7 +127,8 @@ export default async function RFQsPage({ searchParams }: PageProps) {
   const priority = params.priority ?? ''
   const page = Math.max(1, parseInt(params.page ?? '1', 10))
 
-  const companyId = await getCompanyId()
+  const [companyId, role] = await Promise.all([getCompanyId(), getUserRole()])
+  const canCreate = canCreateRFQ(role)
 
   return (
     <PageContainer>
@@ -166,6 +163,7 @@ export default async function RFQsPage({ searchParams }: PageProps) {
             status={status}
             priority={priority}
             page={page}
+            canCreate={canCreate}
           />
         </Suspense>
       </div>

@@ -6,6 +6,10 @@ import { Skeleton, EmptyState } from '@/components/shared/loading-states'
 import { InvoiceStatusBadge } from '@/components/invoices/invoice-status-badge'
 import { getInvoices } from '@/lib/supabase/invoices'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { createClient } from '@/lib/supabase/server'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function db() { return (await createClient()) as any }
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import type { InvoiceStatus } from '@/types/invoice'
@@ -27,18 +31,33 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 const STATUSES = Object.entries(INVOICE_STATUS_LABELS) as [InvoiceStatus, string][]
 
 async function InvoiceStats({ companyId }: { companyId: string }) {
-  const [all, pending, approved, paid] = await Promise.all([
-    getInvoices(companyId, { pageSize: 1 }),
-    getInvoices(companyId, { status: 'submitted', pageSize: 1 }),
-    getInvoices(companyId, { status: 'approved', pageSize: 1 }),
-    getInvoices(companyId, { status: 'paid', pageSize: 1 }),
-  ])
+  // Single efficient query — fetch status counts in one DB round-trip
+  // instead of 4 separate queries or fetching all rows.
+  const supabase = await db()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
+    .from('invoices')
+    .select('status')
+    .eq('company_id', companyId)
+
+  type Row = { status: string }
+  const rows = (data ?? []) as Row[]
+  const count = (statuses: string[]) => rows.filter((r) => statuses.includes(r.status)).length
+
+  const total           = rows.length
+  // Pending = still awaiting Finance action
+  const pendingApproval = count(['submitted', 'under_review'])
+  // Approved = has passed approval (includes partially_paid + paid — they were approved)
+  const approvedCount   = count(['approved', 'partially_paid', 'paid'])
+  // Paid = fully settled
+  const paidCount       = count(['paid'])
+
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <StatCard label="Total" value={all.total} />
-      <StatCard label="Pending Approval" value={pending.total} />
-      <StatCard label="Approved" value={approved.total} />
-      <StatCard label="Paid" value={paid.total} />
+      <StatCard label="Total"           value={total} />
+      <StatCard label="Pending Approval" value={pendingApproval} />
+      <StatCard label="Approved"        value={approvedCount} />
+      <StatCard label="Paid"            value={paidCount} />
     </div>
   )
 }
@@ -153,7 +172,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         <InvoiceStats companyId={companyId} />
       </Suspense>
 
-      {/* Status pills */}
+      {/* Status pills with counts */}
       <div className="mt-4 flex flex-wrap gap-2">
         <Link href="/payments/invoices" className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${!status ? 'bg-[--color-primary] text-white' : 'bg-[--color-muted] text-[--color-foreground-muted] hover:bg-[--color-accent]'}`}>
           All

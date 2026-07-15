@@ -21,11 +21,13 @@ function StatCard({ label, value, sublabel, icon, accent = 'default' }: StatCard
   return (
     <div className="rounded-xl border border-[--color-border] bg-[--color-card] px-5 py-4 shadow-[--shadow-sm]">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-[--color-foreground-muted]">{label}</p>
-          <p className="mt-1 text-2xl font-bold text-[--color-foreground]">{value}</p>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <p className="text-xs font-medium text-[--color-foreground-muted] truncate">{label}</p>
+          <p className="mt-1 text-xl font-bold text-[--color-foreground] break-all leading-tight">
+            {value}
+          </p>
           {sublabel && (
-            <p className="mt-0.5 text-xs text-[--color-foreground-subtle]">{sublabel}</p>
+            <p className="mt-0.5 text-xs text-[--color-foreground-subtle] truncate">{sublabel}</p>
           )}
         </div>
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${accentClass}`}>

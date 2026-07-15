@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { getEffectiveProfile, getUserRole } from '@/lib/supabase/get-auth'
 import { WorkspaceHeader } from '@/components/layout/workspace-header'
 import { PageContainer } from '@/components/shared/page-container'
 import { SettingsTabs } from '@/components/settings/settings-tabs'
@@ -16,50 +17,35 @@ export default async function SettingsPage({
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase = (await createClient()) as any
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/company/login')
 
-  if (!user) redirect('/login')
+  // Use preview-aware profile — shows the previewed employee's profile in preview mode
+  let effectiveProfile
+  try {
+    effectiveProfile = await getEffectiveProfile()
+  } catch {
+    redirect('/company/login')
+  }
 
-  // Fetch profile row
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, email, role, created_at')
-    .eq('id', user.id)
-    .single() as { data: { full_name: string; email: string; role: string; created_at: string } | null }
+  const role = await getUserRole()
+  const isAdmin = role === 'administrator' || role === 'admin'
 
-  // Fetch notification preferences (may not exist yet — that's fine)
+  // Fetch notification preferences for the effective user
   const { data: notifPrefs } = await supabase
     .from('notification_preferences')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', effectiveProfile.id)
     .maybeSingle() as { data: Record<string, boolean> | null }
 
-  // Fetch company/org settings via the user's company_id
-  const companyId: string | undefined =
-    (user.user_metadata?.company_id as string | undefined) ??
-    (await (async () => {
-      const { data } = await supabase
-        .from('users')
-        .select('company_id')
-        .eq('id', user.id)
-        .single()
-      return data?.company_id as string | undefined
-    })())
-
-  const { data: company } = companyId
+  // Fetch company info
+  const { data: company } = effectiveProfile.company_id
     ? (await supabase
         .from('companies')
-        .select('name, timezone, currency, fiscal_year_start')
-        .eq('id', companyId)
+        .select('name, timezone, workspace_name')
+        .eq('id', effectiveProfile.company_id)
         .maybeSingle()) as {
-        data: {
-          name?: string
-          timezone?: string
-          currency?: string
-          fiscal_year_start?: number
-        } | null
+        data: { name?: string; timezone?: string; workspace_name?: string } | null
       }
     : { data: null }
 
@@ -70,20 +56,35 @@ export default async function SettingsPage({
     <div className="min-h-full">
       <WorkspaceHeader
         title="Settings"
-        description="Manage your account and workspace preferences"
+        description={effectiveProfile.isPreview
+          ? `Viewing as ${effectiveProfile.full_name ?? effectiveProfile.email ?? role}`
+          : 'Manage your account and workspace preferences'
+        }
         actions={<Settings className="h-5 w-5 text-[--color-foreground-muted]" />}
       />
       <PageContainer>
         <SettingsTabs
           activeTab={activeTab}
+          isAdmin={isAdmin}
           profile={{
-            full_name: profile?.full_name ?? '',
-            email: profile?.email ?? user.email ?? '',
-            role: profile?.role ?? 'viewer',
-            created_at: profile?.created_at ?? user.created_at,
+            full_name: effectiveProfile.full_name ?? '',
+            email: effectiveProfile.email ?? user.email ?? '',
+            role: effectiveProfile.role,
+            created_at: user.created_at,
+            department: effectiveProfile.department,
+            designation: effectiveProfile.designation,
           }}
           notifPrefs={notifPrefs ?? undefined}
-          org={company ?? undefined}
+          org={
+            company
+              ? {
+                  name: company.name ?? '',
+                  timezone: company.timezone,
+                  currency: undefined,
+                  fiscal_year_start: undefined,
+                }
+              : undefined
+          }
         />
       </PageContainer>
     </div>

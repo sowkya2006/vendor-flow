@@ -31,7 +31,6 @@ export function VendorQuotationForm({ rfqOptions, defaultRfqId, defaultValues, o
     resolver: zodResolver(createVendorQuotationSchema),
     defaultValues: {
       rfq_id: defaultRfqId ?? null,
-      currency: 'INR',
       discount_amount: 0,
       items: [{ description: '', quantity: 1, unit_price: 0, tax_percentage: 0 }],
       ...defaultValues,

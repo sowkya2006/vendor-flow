@@ -27,7 +27,7 @@ const schema = z
 
 type Values = z.infer<typeof schema>
 
-export function ResetPasswordForm() {
+export function ResetPasswordForm({ isInvited = false }: { isInvited?: boolean }) {
   const router = useRouter()
   const [showPw, setShowPw] = useState(false)
   const [showCp, setShowCp] = useState(false)
@@ -44,8 +44,14 @@ export function ResetPasswordForm() {
       toast.error(error.message)
       return
     }
-    toast.success('Password updated successfully')
-    router.push('/dashboard')
+    toast.success(isInvited ? 'Password set! Welcome to VendorFlow.' : 'Password updated successfully')
+    // Hard redirect so the server session cookie is re-sent to the middleware.
+    // The proxy will check vf_portal cookie (set during invite confirmation)
+    // and route to the correct dashboard.
+    // For invited employees: vf_portal=company was set in /auth/confirm,
+    // so they go to /dashboard — middleware skips workspace-setup because
+    // their role is not administrator.
+    window.location.href = '/dashboard'
   }
 
   return (
@@ -129,7 +135,7 @@ export function ResetPasswordForm() {
             Updating…
           </>
         ) : (
-          'Update password'
+          isInvited ? 'Set Password & Continue' : 'Update password'
         )}
       </Button>
     </form>

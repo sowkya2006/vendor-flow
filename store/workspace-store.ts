@@ -7,38 +7,34 @@ interface WorkspaceState {
   currentUser: User | null
   setCurrentWorkspace: (workspace: Workspace | null) => void
   setCurrentUser: (user: User | null) => void
-}
-
-// Placeholder data for Stage 1 — replaced by real auth in Stage 2
-const PLACEHOLDER_WORKSPACE: Workspace = {
-  id: 'ws-1',
-  name: 'Acme Corp',
-  slug: 'acme-corp',
-  plan: 'growth',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-}
-
-const PLACEHOLDER_USER: User = {
-  id: 'user-1',
-  name: 'Alex Johnson',
-  email: 'alex@acme.com',
-  role: 'admin',
-  workspaceId: 'ws-1',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  clearSession: () => void
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
     (set) => ({
-      currentWorkspace: PLACEHOLDER_WORKSPACE,
-      currentUser: PLACEHOLDER_USER,
+      currentWorkspace: null,
+      currentUser: null,
       setCurrentWorkspace: (workspace) => set({ currentWorkspace: workspace }),
       setCurrentUser: (user) => set({ currentUser: user }),
+      clearSession: () => set({ currentWorkspace: null, currentUser: null }),
     }),
     {
-      name: 'vendorflow-workspace',
-    }
-  )
+      name: 'vendorflow-workspace-v2',   // v2 = forces all browsers to start fresh
+      partialize: (state) => ({
+        currentWorkspace: state.currentWorkspace
+          ? {
+              id: state.currentWorkspace.id,
+              name: state.currentWorkspace.name,
+              slug: state.currentWorkspace.slug,
+              plan: state.currentWorkspace.plan,
+              createdAt: state.currentWorkspace.createdAt,
+              updatedAt: state.currentWorkspace.updatedAt,
+            }
+          : null,
+        // NEVER persist the user — role must always come from the database
+        currentUser: null,
+      }),
+    },
+  ),
 )

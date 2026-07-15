@@ -5,6 +5,8 @@ import { PageContainer } from '@/components/shared/page-container'
 import { Skeleton } from '@/components/shared/loading-states'
 import { getPurchaseOrders } from '@/lib/supabase/purchase-orders'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
+import { canCreatePO } from '@/config/nav-roles'
 import { formatCurrency } from '@/lib/utils'
 import type { POStatus } from '@/types/purchase-order'
 
@@ -18,9 +20,9 @@ interface StatCardProps {
 
 function StatCard({ label, value, sublabel }: StatCardProps) {
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-card] px-5 py-4 shadow-[--shadow-sm]">
-      <p className="text-xs font-medium text-[--color-foreground-muted]">{label}</p>
-      <p className="mt-1 text-2xl font-bold text-[--color-foreground]">{value}</p>
+    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] px-5 py-4 shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-shadow hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.07em] text-[--color-foreground-muted]">{label}</p>
+      <p className="mt-2 text-2xl font-bold tabular-nums text-[--color-foreground]">{value}</p>
       {sublabel && (
         <p className="mt-0.5 text-xs text-[--color-foreground-subtle]">{sublabel}</p>
       )}
@@ -105,15 +107,9 @@ async function POStats({ companyId }: { companyId: string }) {
 }
 
 async function POListServer({
-  companyId,
-  search,
-  status,
-  page,
+  companyId, search, status, page, canCreate,
 }: {
-  companyId: string
-  search: string
-  status: string
-  page: number
+  companyId: string; search: string; status: string; page: number; canCreate: boolean
 }) {
   const result = await getPurchaseOrders(companyId, {
     search: search || undefined,
@@ -128,6 +124,7 @@ async function POListServer({
       total={result.total}
       hasNextPage={result.hasNextPage}
       page={result.page}
+      canCreate={canCreate}
     />
   )
 }
@@ -140,18 +137,19 @@ export default async function PurchaseOrdersPage({ searchParams }: PageProps) {
   const status = params.status ?? ''
   const page = Math.max(1, parseInt(params.page ?? '1', 10))
 
-  const companyId = await getCompanyId()
+  const [companyId, role] = await Promise.all([getCompanyId(), getUserRole()])
+  const canCreate = canCreatePO(role)
 
   return (
     <PageContainer>
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[--color-primary]/10 text-[--color-primary]">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[--color-primary]/10 to-indigo-500/10 border border-[--color-primary]/15 text-[--color-primary]">
             <ShoppingCart className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-[--color-foreground]">
+            <h1 className="text-xl font-bold tracking-tight text-[--color-foreground]">
               Purchase Orders
             </h1>
             <p className="text-xs text-[--color-foreground-muted]">
@@ -174,6 +172,7 @@ export default async function PurchaseOrdersPage({ searchParams }: PageProps) {
             search={search}
             status={status}
             page={page}
+            canCreate={canCreate}
           />
         </Suspense>
       </div>

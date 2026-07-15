@@ -13,13 +13,26 @@ const TooltipTrigger = TooltipPrimitive.Trigger
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
+>(({ className, sideOffset = 6, ...props }, ref) => (
+  // Portal renders to document.body — always above everything
   <TooltipPrimitive.Portal>
     <TooltipPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
+      avoidCollisions
       className={cn(
-        'z-[120] overflow-hidden rounded-md bg-[--color-foreground] px-3 py-1.5 text-xs text-[--color-background] animate-fade-in',
+        // Above everything — z-[9999]
+        'z-[9999] overflow-hidden rounded-lg',
+        // Appearance
+        'bg-[--color-foreground] px-3 py-1.5',
+        'text-xs font-medium text-[--color-background] shadow-[0_4px_12px_rgb(0,0,0,0.15)]',
+        // Animation
+        'animate-in fade-in-0 zoom-in-95',
+        'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+        'data-[side=bottom]:slide-in-from-top-1',
+        'data-[side=top]:slide-in-from-bottom-1',
+        'data-[side=left]:slide-in-from-right-1',
+        'data-[side=right]:slide-in-from-left-1',
         className
       )}
       {...props}

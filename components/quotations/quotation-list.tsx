@@ -96,9 +96,10 @@ interface QuotationListProps {
   total: number
   hasNextPage: boolean
   page: number
+  canCreate?: boolean
 }
 
-export function QuotationList({ quotations, total, hasNextPage, page }: QuotationListProps) {
+export function QuotationList({ quotations, total, hasNextPage, page, canCreate = true }: QuotationListProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
@@ -162,12 +163,14 @@ export function QuotationList({ quotations, total, hasNextPage, page }: Quotatio
             </SelectContent>
           </Select>
 
-          <Button asChild size="default">
-            <Link href="/quotations/new">
-              <Plus className="h-4 w-4" />
-              New Quotation
-            </Link>
-          </Button>
+          {canCreate && (
+            <Button asChild size="default">
+              <Link href="/quotations/new">
+                <Plus className="h-4 w-4" />
+                New Quotation
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 

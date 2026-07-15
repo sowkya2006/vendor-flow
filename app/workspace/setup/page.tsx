@@ -11,14 +11,20 @@ export default async function WorkspaceSetupPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/company/login')
 
-  // If already set up, go straight to dashboard
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: userRow } = await (supabase as any)
     .from('users')
-    .select('company_id')
+    .select('company_id, role')
     .eq('id', user.id)
     .single()
-  const companyId = (userRow as { company_id: string } | null)?.company_id
+
+  const companyId = (userRow as { company_id: string; role: string } | null)?.company_id
+  const role      = (userRow as { company_id: string; role: string } | null)?.role ?? 'viewer'
+
+  // Only admins can set up the workspace.
+  // Employees invited by the admin should never land here.
+  const isAdmin = role === 'administrator' || role === 'admin'
+  if (!isAdmin) redirect('/dashboard')
 
   if (companyId) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

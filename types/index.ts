@@ -13,6 +13,8 @@ export interface User {
   avatar?: string
   role: UserRole
   workspaceId: ID
+  department?: string | null
+  designation?: string | null
   createdAt: string
   updatedAt: string
 }

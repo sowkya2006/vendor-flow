@@ -34,8 +34,7 @@ export const vendorQuotationItemSchema = z.object({
 // ── Create quotation ──────────────────────────────────────────
 export const createVendorQuotationSchema = z.object({
   rfq_id: z.string().uuid().optional().nullable(),
-  valid_until: z.string().optional().nullable(),
-  currency: z.string().length(3).default('INR'),
+  valid_until: z.string().optional().nullable().transform(v => (v && v.trim() !== '') ? v : null),
   discount_amount: z.coerce.number().min(0).default(0),
   notes: z.string().max(2000).optional().nullable(),
   items: z.array(vendorQuotationItemSchema).min(1, 'At least one item is required'),
@@ -52,17 +51,37 @@ export type UpdateVendorQuotationInput = z.infer<typeof updateVendorQuotationSch
 export const vendorInvoiceItemSchema = z.object({
   description: z.string().min(1, 'Description is required').max(500),
   quantity: z.coerce.number().positive('Must be > 0'),
+  unit: z.string().max(50).optional().nullable(),
   unit_price: z.coerce.number().nonnegative('Must be ≥ 0'),
   tax_percentage: z.coerce.number().min(0).max(100).default(0),
+  // For matching against PO/GRN
+  po_item_id: z.string().optional().nullable(),
+  ordered_quantity: z.coerce.number().min(0).default(0),
+  received_quantity: z.coerce.number().min(0).default(0),
 })
 
 export const createVendorInvoiceSchema = z.object({
+  invoice_number: z.string().min(1, 'Invoice number is required').max(100),
   purchase_order_id: z.string().uuid().optional().nullable(),
+  grn_id: z.string().uuid().optional().nullable(),
   invoice_date: z.string().min(1, 'Invoice date is required'),
   due_date: z.string().optional().nullable(),
   currency: z.string().length(3).default('INR'),
   discount_amount: z.coerce.number().min(0).default(0),
   notes: z.string().max(2000).optional().nullable(),
+  // Optional file uploads (URLs stored after upload)
+  invoice_pdf_url: z.union([
+    z.string().url(),
+    z.literal(''),
+    z.null(),
+    z.undefined(),
+  ]).transform(v => (v === '' || v == null) ? null : v).optional(),
+  tax_invoice_url: z.union([
+    z.string().url(),
+    z.literal(''),
+    z.null(),
+    z.undefined(),
+  ]).transform(v => (v === '' || v == null) ? null : v).optional(),
   items: z.array(vendorInvoiceItemSchema).min(1, 'At least one item is required'),
 })
 export type CreateVendorInvoiceInput = z.infer<typeof createVendorInvoiceSchema>

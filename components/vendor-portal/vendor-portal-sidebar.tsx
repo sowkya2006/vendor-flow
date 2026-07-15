@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, FileText, FileSearch, ShoppingCart,
-  Receipt, CreditCard, Bell, User, type LucideIcon,
+  Receipt, CreditCard, Bell, User, Building2, Send,
+  type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { VendorUser } from '@/types/vendor-portal'
@@ -13,6 +14,8 @@ interface NavItem { label: string; href: string; icon: LucideIcon }
 
 const NAV: NavItem[] = [
   { label: 'Dashboard',       href: '/vendor/dashboard',        icon: LayoutDashboard },
+  { label: 'Discover Companies', href: '/vendor/companies',     icon: Building2 },
+  { label: 'My Requests',     href: '/vendor/requests',         icon: Send },
   { label: 'RFQs',            href: '/vendor/rfqs',             icon: FileText },
   { label: 'Quotations',      href: '/vendor/quotations',       icon: FileSearch },
   { label: 'Purchase Orders', href: '/vendor/purchase-orders',  icon: ShoppingCart },

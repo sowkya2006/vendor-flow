@@ -10,8 +10,11 @@ import {
   Edit,
   Trash2,
   Package,
+  Send,
 } from 'lucide-react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
+import { canCreateRFQ } from '@/config/nav-roles'
 import { getRFQById } from '@/lib/supabase/rfqs'
 import { WorkspaceHeader } from '@/components/layout/workspace-header'
 import { PageContainer } from '@/components/shared/page-container'
@@ -21,6 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import { formatDistanceToNow } from 'date-fns'
+import { RFQSendButton } from '@/components/rfqs/rfq-send-button'
 
 // ── Metadata ──────────────────────────────────────────────────────────────────
 
@@ -67,43 +71,60 @@ export default async function RFQDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const companyId = await getCompanyId()
-  const rfq = await getRFQById(id, companyId)
 
+  let companyId: string
+  let role: string
+  try {
+    ;[companyId, role] = await Promise.all([getCompanyId(), getUserRole()])
+  } catch {
+    notFound()
+    return null
+  }
+
+  let rfq: Awaited<ReturnType<typeof getRFQById>>
+  try {
+    rfq = await getRFQById(id, companyId!)
+  } catch {
+    notFound()
+    return null
+  }
   if (!rfq) notFound()
 
+  const canEdit = canCreateRFQ(role!)
+  const canSendAndApprove = role === 'procurement_manager' || role === 'administrator' || role === 'admin'
+
   const isOverdue =
-    rfq.due_date &&
-    rfq.status !== 'awarded' &&
-    rfq.status !== 'cancelled' &&
-    new Date(rfq.due_date) < new Date()
+    rfq!.due_date &&
+    rfq!.status !== 'awarded' &&
+    rfq!.status !== 'cancelled' &&
+    new Date(rfq!.due_date) < new Date()
 
   const totalEstimated =
-    rfq.items?.reduce(
+    rfq!.items?.reduce(
       (sum, item) => sum + (item.estimated_unit_price ?? 0) * item.quantity,
       0,
     ) ?? 0
 
+  const createdAt = rfq!.created_at ? new Date(rfq!.created_at) : null
+  const updatedAt = rfq!.updated_at ? new Date(rfq!.updated_at) : null
+
   return (
     <div className="min-h-full">
       <WorkspaceHeader
-        title={rfq.title}
-        description={`RFQ · Created ${formatDistanceToNow(new Date(rfq.created_at), { addSuffix: true })}`}
+        title={rfq!.title}
+        description={`RFQ · ${createdAt ? `Created ${formatDistanceToNow(createdAt, { addSuffix: true })}` : ''}`}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link href="/rfqs">
-                <ChevronLeft className="h-4 w-4" />
-                Back
-              </Link>
+              <Link href="/rfqs"><ChevronLeft className="h-4 w-4" />Back</Link>
             </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/rfqs/${rfq.id}/edit`}>
-                <Edit className="h-4 w-4" />
-                Edit
-              </Link>
-            </Button>
-            <RFQDeleteButton rfqId={rfq.id} />
+            {rfq!.status === 'draft' && canSendAndApprove && <RFQSendButton rfqId={rfq!.id} />}
+            {canEdit && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/rfqs/${rfq!.id}/edit`}><Edit className="h-4 w-4" />Edit</Link>
+              </Button>
+            )}
+            {canEdit && <RFQDeleteButton rfqId={rfq!.id} />}
           </div>
         }
       />
@@ -255,42 +276,29 @@ export default async function RFQDetailPage({
               <Separator className="mb-3" />
 
               <div className="divide-y divide-[--color-border]">
-                {rfq.vendor && (
-                  <InfoRow
-                    icon={Building2}
-                    label="Vendor"
-                    value={rfq.vendor.name}
-                  />
+                {rfq!.vendor && (
+                  <InfoRow icon={Building2} label="Vendor" value={rfq!.vendor.name} />
                 )}
                 <InfoRow
                   icon={Calendar}
                   label="Closing Date"
                   value={
-                    rfq.due_date ? (
-                      <span
-                        className={
-                          isOverdue ? 'text-[--color-error]' : undefined
-                        }
-                      >
-                        {formatDate(rfq.due_date)}
-                        {isOverdue && ' · Overdue'}
+                    rfq!.due_date ? (
+                      <span className={isOverdue ? 'text-[--color-error]' : undefined}>
+                        {formatDate(rfq!.due_date)}{isOverdue && ' · Overdue'}
                       </span>
-                    ) : (
-                      <span className="text-[--color-foreground-subtle]">Not set</span>
-                    )
+                    ) : <span className="text-[--color-foreground-subtle]">Not set</span>
                   }
                 />
                 <InfoRow
                   icon={Clock}
                   label="Created"
-                  value={formatDate(rfq.created_at)}
+                  value={formatDate(rfq!.created_at)}
                 />
                 <InfoRow
                   icon={Clock}
                   label="Last updated"
-                  value={formatDistanceToNow(new Date(rfq.updated_at), {
-                    addSuffix: true,
-                  })}
+                  value={updatedAt ? formatDistanceToNow(updatedAt, { addSuffix: true }) : '—'}
                 />
               </div>
             </div>

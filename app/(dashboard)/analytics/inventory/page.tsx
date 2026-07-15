@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 import { Warehouse, AlertTriangle, XCircle, Package } from 'lucide-react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
 import { getInventoryAnalytics } from '@/lib/supabase/analytics'
 import { AnalyticsKpiCard } from '@/components/analytics/analytics-kpi-card'
 import { AnalyticsChartCard } from '@/components/analytics/analytics-chart-card'
@@ -177,7 +179,12 @@ async function InventoryContent() {
   )
 }
 
-export default function InventoryAnalyticsPage() {
+export default async function InventoryAnalyticsPage() {
+  const role = await getUserRole()
+  if (!['administrator', 'admin', 'warehouse_manager'].includes(role)) {
+    const { getAnalyticsDefaultPath } = await import('@/config/nav-roles')
+    redirect(getAnalyticsDefaultPath(role))
+  }
   return (
     <Suspense fallback={<PageSkeleton />}>
       <InventoryContent />

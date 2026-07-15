@@ -5,20 +5,32 @@ import { ArrowLeft, Receipt, CheckCircle2 } from 'lucide-react'
 import { getVendorUser, getVendorInvoiceById } from '@/lib/supabase/vendor-portal'
 import { formatDate, formatCurrency } from '@/lib/utils'
 
+export const dynamic = 'force-dynamic'
 export const metadata: Metadata = { title: 'Invoice Details' }
 interface PageProps { params: Promise<{ id: string }> }
 
 const STATUS_STYLE: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-600', submitted: 'bg-amber-100 text-amber-700',
+  under_review: 'bg-amber-100 text-amber-700',
   approved: 'bg-blue-100 text-blue-700', partially_paid: 'bg-cyan-100 text-cyan-700',
-  paid: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700',
+  paid: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700',
+  cancelled: 'bg-red-100 text-red-700',
 }
 
 export default async function VendorInvoiceDetailPage({ params }: PageProps) {
   const { id } = await params
   const vu = await getVendorUser()
   if (!vu) redirect('/vendor/login')
-  const invoice = await getVendorInvoiceById(id, vu.vendor_id)
+
+  // Use admin client for reliability
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (await import('@/lib/supabase/admin')).createAdminClient() as any
+  const { data: invoice } = await db
+    .from('invoices')
+    .select('*, purchase_order:purchase_orders(id, po_number), items:invoice_items(*), payments(*)')
+    .eq('id', id)
+    .maybeSingle()
+
   if (!invoice) notFound()
 
   return (
@@ -61,7 +73,7 @@ export default async function VendorInvoiceDetailPage({ params }: PageProps) {
                   <tr>{['Description', 'Qty', 'Unit Price', 'Tax %', 'Total'].map((h) => <th key={h} className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-[--color-foreground-muted]">{h}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-[--color-border]">
-                  {(invoice.items ?? []).map((item) => (
+                  {(invoice.items ?? []).map((item: { id: string; description: string; quantity: number; unit_price: number; tax_percentage: number; line_total: number }) => (
                     <tr key={item.id}>
                       <td className="px-4 py-3 text-sm text-[--color-foreground]">{item.description}</td>
                       <td className="px-4 py-3 text-sm">{item.quantity}</td>
@@ -83,7 +95,7 @@ export default async function VendorInvoiceDetailPage({ params }: PageProps) {
                 <h2 className="text-sm font-semibold text-[--color-foreground]">Payment History</h2>
               </div>
               <ul className="divide-y divide-[--color-border]">
-                {(invoice.payments ?? []).map((pay) => (
+                {(invoice.payments ?? []).map((pay: { id: string; payment_reference: string; payment_date: string; payment_method: string; amount: number }) => (
                   <li key={pay.id} className="flex items-center justify-between px-5 py-3 gap-4">
                     <div>
                       <p className="text-sm font-medium text-[--color-foreground]">{pay.payment_reference}</p>

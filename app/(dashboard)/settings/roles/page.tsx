@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 import { ShieldCheck, Plus } from 'lucide-react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
 import { getRoles, getAllPermissions } from '@/lib/supabase/roles'
 import { RolePermissionsForm } from '@/components/settings/role-permissions-form'
 import { CreateRoleButton } from '@/components/settings/create-role-button'
@@ -74,7 +76,11 @@ async function RolesContent() {
   )
 }
 
-export default function RolesPage() {
+export default async function RolesPage() {
+  // Administrator-only page
+  const role = await getUserRole()
+  const isAdmin = role === 'administrator' || role === 'admin'
+  if (!isAdmin) redirect('/403')
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">

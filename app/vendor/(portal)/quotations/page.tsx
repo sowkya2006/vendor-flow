@@ -40,7 +40,7 @@ async function QuotationList({ status, page }: { status: string; page: number })
             <p className="text-xs text-[--color-foreground-muted] truncate">{(q.rfq as { title: string } | null)?.title ?? 'No RFQ'} · {formatDate(q.created_at)}</p>
           </div>
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${STATUS_STYLE[q.status] ?? 'bg-gray-100 text-gray-600'}`}>{q.status}</span>
-          <span className="hidden md:block text-sm font-semibold text-[--color-foreground] shrink-0">{formatCurrency(q.total_amount)}</span>
+          <span className="hidden md:block text-sm font-semibold text-[--color-foreground] shrink-0">{formatCurrency((q as { grand_total?: number; total_amount?: number }).grand_total ?? (q as { grand_total?: number; total_amount?: number }).total_amount ?? 0)}</span>
         </Link>
       ))}
       {(page > 1 || result.hasNextPage) && (

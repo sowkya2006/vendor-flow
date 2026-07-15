@@ -8,6 +8,7 @@ import { formatDate, formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
 export const metadata: Metadata = { title: 'Quotation Details' }
+export const dynamic = 'force-dynamic'
 interface PageProps { params: Promise<{ id: string }> }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -24,6 +25,18 @@ export default async function VendorQuotationDetailPage({ params }: PageProps) {
 
   const isDraft = q.status === 'draft'
   const canWithdraw = ['draft', 'submitted'].includes(q.status)
+
+  // Fallback: if DB totals are 0 (trigger was blocked by RLS), compute from items
+  const items = q.items ?? []
+  const computedSubtotal = items.reduce((s, i) => s + (i.quantity * i.unit_price), 0)
+  const computedTax      = items.reduce((s, i) => s + (i.tax_amount ?? (i.quantity * i.unit_price * ((i.tax_pct ?? 0) / 100))), 0)
+  const computedDiscount = q.discount_amount ?? 0
+  const computedTotal    = computedSubtotal + computedTax - computedDiscount
+
+  const displaySubtotal = (q.subtotal && q.subtotal > 0) ? q.subtotal : computedSubtotal
+  const displayTax      = (q.tax_amount && q.tax_amount > 0) ? q.tax_amount : computedTax
+  const displayDiscount = q.discount_amount ?? 0
+  const displayTotal    = (q.grand_total && q.grand_total > 0) ? q.grand_total : (q.total_amount && q.total_amount > 0) ? q.total_amount : computedTotal
 
   return (
     <div className="p-6 max-w-4xl space-y-5">
@@ -77,19 +90,19 @@ export default async function VendorQuotationDetailPage({ params }: PageProps) {
                 <tbody className="divide-y divide-[--color-border]">
                   {(q.items ?? []).map((item) => (
                     <tr key={item.id}>
-                      <td className="px-4 py-3 text-sm text-[--color-foreground]">{item.description}</td>
+                      <td className="px-4 py-3 text-sm text-[--color-foreground]">{item.item_name ?? item.description ?? '—'}</td>
                       <td className="px-4 py-3 text-sm text-[--color-foreground]">{item.quantity}</td>
                       <td className="px-4 py-3 text-sm text-[--color-foreground]">{formatCurrency(item.unit_price)}</td>
-                      <td className="px-4 py-3 text-sm text-[--color-foreground-muted]">{item.tax_percentage > 0 ? `${item.tax_percentage}%` : '—'}</td>
+                      <td className="px-4 py-3 text-sm text-[--color-foreground-muted]">{(item.tax_pct ?? 0) > 0 ? `${item.tax_pct}%` : '—'}</td>
                       <td className="px-4 py-3 text-right text-sm font-semibold text-[--color-foreground]">{formatCurrency(item.line_total)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="border-t border-[--color-border] bg-[--color-background-subtle]">
-                  <tr><td colSpan={4} className="px-4 py-2 text-right text-xs text-[--color-foreground-muted]">Subtotal</td><td className="px-4 py-2 text-right text-sm font-medium">{formatCurrency(q.subtotal)}</td></tr>
-                  <tr><td colSpan={4} className="px-4 py-2 text-right text-xs text-[--color-foreground-muted]">Tax</td><td className="px-4 py-2 text-right text-sm font-medium">{formatCurrency(q.tax_amount)}</td></tr>
-                  {q.discount_amount > 0 && <tr><td colSpan={4} className="px-4 py-2 text-right text-xs text-emerald-600">Discount</td><td className="px-4 py-2 text-right text-sm text-emerald-600">−{formatCurrency(q.discount_amount)}</td></tr>}
-                  <tr><td colSpan={4} className="px-4 py-3 text-right text-sm font-bold text-[--color-foreground]">Total</td><td className="px-4 py-3 text-right text-base font-bold text-[--color-foreground]">{formatCurrency(q.total_amount)}</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-2 text-right text-xs text-[--color-foreground-muted]">Subtotal</td><td className="px-4 py-2 text-right text-sm font-medium">{formatCurrency(displaySubtotal)}</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-2 text-right text-xs text-[--color-foreground-muted]">Tax</td><td className="px-4 py-2 text-right text-sm font-medium">{formatCurrency(displayTax)}</td></tr>
+                  {displayDiscount > 0 && <tr><td colSpan={4} className="px-4 py-2 text-right text-xs text-emerald-600">Discount</td><td className="px-4 py-2 text-right text-sm text-emerald-600">−{formatCurrency(displayDiscount)}</td></tr>}
+                  <tr><td colSpan={4} className="px-4 py-3 text-right text-sm font-bold text-[--color-foreground]">Total</td><td className="px-4 py-3 text-right text-base font-bold text-[--color-foreground]">{formatCurrency(displayTotal)}</td></tr>
                 </tfoot>
               </table>
             </div>
@@ -108,7 +121,6 @@ export default async function VendorQuotationDetailPage({ params }: PageProps) {
             { label: 'Number', value: q.quotation_number },
             { label: 'Status', value: q.status },
             { label: 'Valid Until', value: q.valid_until ? formatDate(q.valid_until) : '—' },
-            { label: 'Currency', value: q.currency },
             { label: 'Created', value: formatDate(q.created_at) },
           ].map(({ label, value }) => (
             <div key={label} className="flex justify-between text-sm">

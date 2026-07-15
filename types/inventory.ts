@@ -111,12 +111,24 @@ export interface InventoryListItem {
 export interface GrnItem {
   id: string
   grn_id: string
-  product_id: string
+  product_id: string | null
+  // Extended columns (added in migration 20240118000000)
+  item_name: string | null
+  description: string | null
+  sku: string | null
+  unit: string | null
+  tax_percentage: number
   ordered_quantity: number
   received_quantity: number
+  accepted_quantity: number | null
+  rejected_quantity: number
+  damage_notes: string | null
+  batch_number: string | null
+  serial_numbers: string | null
+  warehouse_location: string | null
   unit_cost: number
   notes: string | null
-  product?: { id: string; name: string; sku: string; unit: string }
+  product?: { id: string; name: string; sku: string; unit: string } | null
 }
 
 export interface Grn {

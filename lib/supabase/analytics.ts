@@ -83,8 +83,9 @@ export async function getExecutiveKpis(companyId: string): Promise<ExecutiveKpis
     supabase.from('inventory').select('valuation').eq('company_id', companyId),
     supabase.from('inventory').select('quantity_available, product:products!inner(reorder_level)').eq('company_id', companyId).gt('quantity_available', 0).limit(2000),
     supabase.from('inventory').select('id', { count: 'exact', head: true }).eq('company_id', companyId).lte('quantity_available', 0),
-    supabase.from('approval_requests').select('id', { count: 'exact', head: true }).eq('company_id', companyId).not('status', 'in', '("approved","rejected","cancelled","completed","draft")'),
-    supabase.from('approval_requests').select('id', { count: 'exact', head: true }).eq('company_id', companyId).in('status', ['approved', 'completed']),
+    // Pending approvals = items in pending/draft status across all entity types
+    supabase.from('rfqs').select('id', { count: 'exact', head: true }).eq('company_id', companyId).in('status', ['draft', 'pending_approval']),
+    supabase.from('quotations').select('id', { count: 'exact', head: true }).eq('company_id', companyId).in('status', ['submitted', 'under_review']),
     supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
     supabase.from('invoices').select('remaining_amount').eq('company_id', companyId).in('status', ['approved', 'partially_paid']),
     supabase.from('invoices').select('paid_amount').eq('company_id', companyId).in('status', ['paid', 'partially_paid']),
@@ -99,6 +100,14 @@ export async function getExecutiveKpis(companyId: string): Promise<ExecutiveKpis
   const totalQ = totalQuotations.count ?? 0
   const approvedQ = approvedQuotations.count ?? 0
 
+  // pendingApprovals = pending RFQs + pending quotations
+  // completedApprovals = all approved POs
+  const pendingCount = (pendingApprovals.count ?? 0) + (completedApprovals.count ?? 0)
+  // For completed: count approved POs as a proxy
+  const { count: approvedPOs } = await supabase
+    .from('purchase_orders').select('id', { count: 'exact', head: true })
+    .eq('company_id', companyId).in('status', ['approved', 'completed'])
+
   return {
     total_vendors: totalVendors.count ?? 0,
     active_vendors: activeVendors.count ?? 0,
@@ -110,8 +119,8 @@ export async function getExecutiveKpis(companyId: string): Promise<ExecutiveKpis
     total_procurement_spend: totalSpend,
     inventory_value: invVal,
     low_stock_items: lowStock + (outOfStockCount.count ?? 0),
-    pending_approvals: pendingApprovals.count ?? 0,
-    completed_approvals: completedApprovals.count ?? 0,
+    pending_approvals: pendingCount,
+    completed_approvals: approvedPOs ?? 0,
     total_invoices: totalInvoices.count ?? 0,
     outstanding_amount: outstanding,
     paid_amount: paid,
@@ -371,7 +380,8 @@ export interface InventoryAnalytics {
 export async function getInventoryAnalytics(companyId: string): Promise<InventoryAnalytics> {
   const supabase = await db()
 
-  const { data } = await supabase
+  // Fetch inventory rows (may be empty if no GRNs completed yet)
+  const { data: invData } = await supabase
     .from('inventory')
     .select(`
       quantity_available, valuation,
@@ -380,22 +390,35 @@ export async function getInventoryAnalytics(companyId: string): Promise<Inventor
     `)
     .eq('company_id', companyId)
     .limit(5000)
+
+  // Also fetch all active products (even if not yet in inventory)
+  const { data: allProducts, count: productCount } = await supabase
+    .from('products')
+    .select('id, name, sku, unit_cost, status', { count: 'exact' })
+    .eq('company_id', companyId)
+    .eq('status', 'active')
+    .limit(5000)
+
   type InvRow = {
     quantity_available: number
     valuation: number
     product: { id: string; name: string; sku: string; reorder_level: number }
     warehouse: { id: string; name: string }
   }
-  const rows = (data ?? []) as InvRow[]
+
+  const rows = (invData ?? []) as InvRow[]
+  const products = (allProducts ?? []) as { id: string; name: string; sku: string; unit_cost: number; status: string }[]
 
   const total_value = rows.reduce((s, r) => s + (r.valuation ?? 0), 0)
   const low_stock = rows.filter((r) => r.quantity_available > 0 && r.quantity_available <= r.product.reorder_level)
   const out_of_stock = rows.filter((r) => r.quantity_available <= 0)
 
-  // Unique products
-  const productIds = new Set(rows.map((r) => r.product.id))
+  // Unique products in inventory
+  const productIdsInInventory = new Set(rows.map((r) => r.product.id))
+  // Total = max of products in inventory OR total active products
+  const total_products_count = Math.max(productIdsInInventory.size, productCount ?? 0)
 
-  // By warehouse — use warehouse_name to match interface
+  // By warehouse
   const whMap: Record<string, { warehouse_name: string; value: number; qty: number }> = {}
   for (const r of rows) {
     const wh = r.warehouse
@@ -416,21 +439,27 @@ export async function getInventoryAnalytics(companyId: string): Promise<Inventor
       reorder_level: r.product.reorder_level,
     }))
 
-  // Top by value
-  const top_products_by_value = [...rows]
-    .sort((a, b) => b.valuation - a.valuation)
-    .slice(0, 10)
-    .map((r) => ({
-      product_name: r.product.name,
-      sku: r.product.sku,
-      value: r.valuation ?? 0,
-    }))
+  // Top by value — use inventory valuation if available, otherwise use product unit_cost
+  let top_products_by_value: { product_name: string; sku: string; value: number }[]
+
+  if (rows.length > 0) {
+    top_products_by_value = [...rows]
+      .sort((a, b) => (b.valuation ?? 0) - (a.valuation ?? 0))
+      .slice(0, 10)
+      .map((r) => ({ product_name: r.product.name, sku: r.product.sku, value: r.valuation ?? 0 }))
+  } else {
+    // No inventory yet — show products by unit_cost as estimate
+    top_products_by_value = [...products]
+      .sort((a, b) => (b.unit_cost ?? 0) - (a.unit_cost ?? 0))
+      .slice(0, 10)
+      .map((p) => ({ product_name: p.name, sku: p.sku, value: p.unit_cost ?? 0 }))
+  }
 
   return {
     total_value,
     low_stock_count: low_stock.length,
     out_of_stock_count: out_of_stock.length,
-    total_products: productIds.size,
+    total_products: total_products_count,
     by_warehouse,
     low_stock_products,
     top_products_by_value,
@@ -547,6 +576,8 @@ export async function getFinanceAnalytics(companyId: string): Promise<FinanceAna
 
 // ─────────────────────────────────────────────────────────────────────────────
 // APPROVAL ANALYTICS
+// Uses real entity data from rfqs, quotations, purchase_orders, invoices
+// instead of the (now-removed) approval_requests table.
 // ─────────────────────────────────────────────────────────────────────────────
 export interface ApprovalAnalytics {
   total: number
@@ -561,53 +592,87 @@ export interface ApprovalAnalytics {
 
 export async function getApprovalAnalytics(companyId: string): Promise<ApprovalAnalytics> {
   const supabase = await db()
-  const STATUS_COLORS: Record<string, string> = {
-    pending: '#f59e0b', approved: '#22c55e', rejected: '#ef4444',
-    cancelled: '#94a3b8', completed: '#4350ed', draft: '#8b5cf6',
+
+  const PENDING_STATUSES = {
+    rfq: ['draft', 'pending_approval'],
+    quotation: ['submitted', 'under_review', 'shortlisted'],
+    purchase_order: ['draft', 'pending_approval'],
+    invoice: ['submitted', 'under_review'],
+  }
+  const APPROVED_STATUSES = {
+    rfq: ['approved', 'sent', 'awarded'],
+    quotation: ['approved', 'selected', 'closed'],
+    purchase_order: ['approved', 'sent', 'acknowledged', 'in_progress', 'completed'],
+    invoice: ['approved', 'partially_paid', 'paid'],
+  }
+  const REJECTED_STATUSES = {
+    rfq: ['rejected', 'cancelled'],
+    quotation: ['rejected', 'withdrawn'],
+    purchase_order: ['rejected', 'cancelled'],
+    invoice: ['rejected', 'cancelled'],
   }
 
-  const { data } = await supabase
-    .from('approval_requests')
-    .select('id, status, request_type, created_at')
-    .eq('company_id', companyId).limit(5000)
-  type ApprovalRow = { id: string; status: string; request_type: string | null; created_at: string }
-  const rows = (data ?? []) as ApprovalRow[]
+  const [rfqs, quotations, pos, invoices] = await Promise.all([
+    supabase.from('rfqs').select('id, status, created_at').eq('company_id', companyId).limit(5000),
+    supabase.from('quotations').select('id, status, created_at').eq('company_id', companyId).limit(5000),
+    supabase.from('purchase_orders').select('id, status, created_at').eq('company_id', companyId).limit(5000),
+    supabase.from('invoices').select('id, status, created_at').eq('company_id', companyId).limit(5000),
+  ])
 
-  const statusMap: Record<string, number> = {}
-  for (const r of rows) { statusMap[r.status] = (statusMap[r.status] ?? 0) + 1 }
-  const by_status: ChartPoint[] = Object.entries(statusMap).map(([name, value]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1), value,
-    color: STATUS_COLORS[name] ?? '#94a3b8',
-  }))
+  type Row = { id: string; status: string; created_at: string }
+  const rfqRows = (rfqs.data ?? []) as Row[]
+  const quotRows = (quotations.data ?? []) as Row[]
+  const poRows  = (pos.data ?? []) as Row[]
+  const invRows = (invoices.data ?? []) as Row[]
 
-  const typeMap: Record<string, number> = {}
-  for (const r of rows) {
-    const t = r.request_type ?? 'other'
-    typeMap[t] = (typeMap[t] ?? 0) + 1
+  const all = [
+    ...rfqRows.map((r) => ({ ...r, type: 'rfq' })),
+    ...quotRows.map((r) => ({ ...r, type: 'quotation' })),
+    ...poRows.map((r) => ({ ...r, type: 'purchase_order' })),
+    ...invRows.map((r) => ({ ...r, type: 'invoice' })),
+  ]
+
+  const isPending = (r: { type: string; status: string }) =>
+    PENDING_STATUSES[r.type as keyof typeof PENDING_STATUSES]?.includes(r.status) ?? false
+  const isApproved = (r: { type: string; status: string }) =>
+    APPROVED_STATUSES[r.type as keyof typeof APPROVED_STATUSES]?.includes(r.status) ?? false
+  const isRejected = (r: { type: string; status: string }) =>
+    REJECTED_STATUSES[r.type as keyof typeof REJECTED_STATUSES]?.includes(r.status) ?? false
+
+  const pending  = all.filter(isPending).length
+  const approved = all.filter(isApproved).length
+  const rejected = all.filter(isRejected).length
+  const total    = all.length
+
+  // By status
+  const by_status: ChartPoint[] = [
+    { name: 'Pending',  value: pending,  color: '#f59e0b' },
+    { name: 'Approved', value: approved, color: '#22c55e' },
+    { name: 'Rejected', value: rejected, color: '#ef4444' },
+  ].filter((s) => s.value > 0)
+
+  // By type
+  const typeColors: Record<string, string> = {
+    rfq: '#4350ed', quotation: '#8b5cf6', purchase_order: '#f97316', invoice: '#06b6d4',
   }
-  const by_type: ChartPoint[] = Object.entries(typeMap)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, value], i) => ({
-      name: name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-      value, color: Object.values(STATUS_COLORS)[i % Object.values(STATUS_COLORS).length],
-    }))
+  const by_type: ChartPoint[] = [
+    { name: 'RFQs',            value: rfqRows.length,  color: typeColors.rfq },
+    { name: 'Quotations',      value: quotRows.length, color: typeColors.quotation },
+    { name: 'Purchase Orders', value: poRows.length,   color: typeColors.purchase_order },
+    { name: 'Invoices',        value: invRows.length,  color: typeColors.invoice },
+  ].filter((t) => t.value > 0)
 
+  // Monthly trend (last 12 months)
   const months = monthRange(12)
   const monthly_requests: TimePoint[] = months.map(({ label, from, to }) => ({
     month: label,
-    value: rows.filter((r) => r.created_at >= from && r.created_at <= to + 'T23:59:59').length,
+    value: all.filter((r) => r.created_at >= from && r.created_at <= to + 'T23:59:59').length,
   }))
 
-  const resolved = rows.filter((r) => ['approved', 'rejected', 'completed'].includes(r.status)).length
-  const completion_rate = rows.length > 0 ? Math.round((resolved / rows.length) * 100) : 0
+  const resolved = approved + rejected
+  const completion_rate = total > 0 ? Math.round((resolved / total) * 100) : 0
 
-  return {
-    total: rows.length,
-    pending: statusMap['pending'] ?? 0,
-    approved: (statusMap['approved'] ?? 0) + (statusMap['completed'] ?? 0),
-    rejected: statusMap['rejected'] ?? 0,
-    by_status, by_type, monthly_requests, completion_rate,
-  }
+  return { total, pending, approved, rejected, by_status, by_type, monthly_requests, completion_rate }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

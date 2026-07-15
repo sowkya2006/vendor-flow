@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 import { ClipboardList, CheckCircle2, XCircle, Clock } from 'lucide-react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
 import { getApprovalAnalytics } from '@/lib/supabase/analytics'
 import { AnalyticsKpiCard } from '@/components/analytics/analytics-kpi-card'
 import { AnalyticsChartCard } from '@/components/analytics/analytics-chart-card'
@@ -181,7 +183,12 @@ async function ApprovalContent() {
   )
 }
 
-export default function ApprovalAnalyticsPage() {
+export default async function ApprovalAnalyticsPage() {
+  const role = await getUserRole()
+  if (!['administrator', 'admin', 'procurement_manager'].includes(role)) {
+    const { getAnalyticsDefaultPath } = await import('@/config/nav-roles')
+    redirect(getAnalyticsDefaultPath(role))
+  }
   return (
     <Suspense fallback={<PageSkeleton />}>
       <ApprovalContent />

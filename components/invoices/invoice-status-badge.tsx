@@ -6,7 +6,9 @@ import { INVOICE_STATUS_LABELS, PAYMENT_METHOD_LABELS } from '@/types/invoice'
 const INVOICE_STATUS_VARIANT: Record<InvoiceStatus, BadgeProps['variant']> = {
   draft: 'outline',
   submitted: 'warning',
+  under_review: 'warning',
   approved: 'info',
+  rejected: 'error',
   partially_paid: 'warning',
   paid: 'success',
   cancelled: 'error',

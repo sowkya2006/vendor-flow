@@ -31,14 +31,20 @@ export interface PurchaseOrder {
   po_number: string
   vendor_id: ID
   rfq_id: ID | null
+  quotation_id: ID | null        // Direct link to the approved quotation
   status: POStatus
   total_amount: number | null
-  due_date: string | null       // ISO date string
+  due_date: string | null
   shipping_address: string | null
   billing_address: string | null
   payment_terms: string | null
   notes: string | null
   created_by: ID | null
+  approved_by: ID | null
+  approved_at: string | null
+  vendor_acceptance: 'pending' | 'accepted' | 'rejected' | 'clarification_requested' | null
+  vendor_accepted_at: string | null
+  vendor_rejection_reason: string | null
   created_at: string
   updated_at: string
   // Joined relations
@@ -50,6 +56,14 @@ export interface PurchaseOrder {
     category: string | null
   }
   items?: PurchaseOrderItem[]
+  // Quotation + RFQ provenance (joined when needed)
+  quotation?: {
+    id: ID
+    quotation_number: string
+    rfq_id: ID | null
+    grand_total: number | null
+    rfq?: { id: ID; rfq_number: string; title: string }
+  }
 }
 
 /** Lightweight row returned by the list query */
@@ -83,6 +97,7 @@ export interface PurchaseOrderItemFormData {
 export interface PurchaseOrderFormData {
   vendor_id: ID
   rfq_id?: ID | null
+  quotation_id?: ID | null       // Source quotation (required for new POs)
   due_date?: string | null
   shipping_address?: string | null
   billing_address?: string | null

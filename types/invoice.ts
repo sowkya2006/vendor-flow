@@ -9,7 +9,9 @@ import type { ID } from '@/types'
 export type InvoiceStatus =
   | 'draft'
   | 'submitted'
+  | 'under_review'
   | 'approved'
+  | 'rejected'
   | 'partially_paid'
   | 'paid'
   | 'cancelled'
@@ -21,7 +23,9 @@ export type PaymentMethod = 'bank_transfer' | 'upi' | 'cheque' | 'cash' | 'card'
 export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   draft: 'Draft',
   submitted: 'Submitted',
+  under_review: 'Under Review',
   approved: 'Approved',
+  rejected: 'Rejected',
   partially_paid: 'Partially Paid',
   paid: 'Paid',
   cancelled: 'Cancelled',
@@ -57,6 +61,7 @@ export interface Invoice {
   id: ID
   company_id: ID
   purchase_order_id: ID | null
+  grn_id: ID | null
   vendor_id: ID
   invoice_number: string
   invoice_date: string

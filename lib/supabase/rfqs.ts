@@ -73,6 +73,32 @@ export async function getRFQById(id: string, companyId: string): Promise<RFQ | n
 }
 
 /**
+ * Generate an RFQ number in the application layer.
+ * The DB trigger (generate_rfq_number) handles this automatically on INSERT,
+ * but we also generate it here as a fallback in case the trigger hasn't been
+ * applied or the column is NOT NULL without a default.
+ */
+async function generateRFQNumber(supabase: Awaited<ReturnType<typeof db>>, companyId: string): Promise<string> {
+  const year = new Date().getFullYear().toString()
+  const { data } = await supabase
+    .from(TABLE)
+    .select('rfq_number')
+    .eq('company_id', companyId)
+    .like('rfq_number', `RFQ-${year}-%`)
+    .order('rfq_number', { ascending: false })
+    .limit(1)
+
+  const lastNum = data?.[0]?.rfq_number as string | undefined
+  let seq = 1
+  if (lastNum) {
+    const parts = lastNum.split('-')
+    const n = parseInt(parts[parts.length - 1], 10)
+    if (!isNaN(n)) seq = n + 1
+  }
+  return `RFQ-${year}-${seq.toString().padStart(4, '0')}`
+}
+
+/**
  * Insert a new RFQ and its line items.
  */
 export async function createRFQ(
@@ -82,23 +108,33 @@ export async function createRFQ(
 ): Promise<RFQ> {
   const supabase = await db()
 
+  // Generate rfq_number here as well; the DB trigger will use this value if
+  // rfq_number is provided, and fall back to its own logic if not.
+  const rfq_number = await generateRFQNumber(supabase, companyId)
+
   const { data: rfq, error } = await supabase
     .from(TABLE)
     .insert({
-      company_id: companyId,
-      created_by: createdBy,
-      title: data.title,
-      description: data.description ?? null,
-      vendor_id: data.vendor_id,
-      due_date: data.due_date ?? null,
-      priority: data.priority ?? 'medium',
-      terms: data.terms ?? null,
-      status: 'draft',
+      company_id:  companyId,
+      created_by:  createdBy,
+      title:       data.title,
+      description: data.description || null,
+      vendor_id:   data.vendor_id,
+      // Sanitize due_date — empty string '' is invalid for a DATE column.
+      // Convert to null so Postgres doesn't throw error 22007.
+      due_date:    (data.due_date && data.due_date.trim() !== '') ? data.due_date.trim() : null,
+      priority:    data.priority ?? 'medium',
+      terms:       data.terms || null,
+      status:      'draft',
+      rfq_number,
     })
     .select()
     .single()
 
-  if (error) throw error
+  if (error) {
+    console.error('[createRFQ] insert error:', error)
+    throw error
+  }
 
   if (data.items && data.items.length > 0) {
     const items = data.items.map((item) => ({
@@ -109,7 +145,10 @@ export async function createRFQ(
       estimated_unit_price: item.estimated_unit_price ?? null,
     }))
     const { error: itemsError } = await supabase.from('rfq_items').insert(items)
-    if (itemsError) throw itemsError
+    if (itemsError) {
+      console.error('[createRFQ] rfq_items insert error:', itemsError)
+      throw itemsError
+    }
   }
 
   return rfq as RFQ

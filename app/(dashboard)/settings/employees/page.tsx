@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { Users, UserPlus, Mail } from 'lucide-react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
 import { getEmployees, getInvitations, getRoles } from '@/lib/supabase/roles'
 import { Skeleton } from '@/components/shared/loading-states'
 import { formatDate } from '@/lib/utils'
@@ -127,7 +129,10 @@ async function EmployeeList() {
   )
 }
 
-export default function EmployeesPage() {
+export default async function EmployeesPage() {
+  // Administrator-only page
+  const role = await getUserRole()
+  if (role !== 'administrator' && role !== 'admin') redirect('/403')
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center gap-3">

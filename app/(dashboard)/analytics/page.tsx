@@ -1,11 +1,13 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 import {
   Building2, FileText, ShoppingCart, DollarSign,
   Warehouse, Clock, CheckCircle2, AlertTriangle,
   Receipt, TrendingDown, CreditCard, FileSearch,
 } from 'lucide-react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
 import { getExecutiveKpis, getExecutiveChartData } from '@/lib/supabase/analytics'
 import { AnalyticsKpiCard } from '@/components/analytics/analytics-kpi-card'
 import { AnalyticsChartCard } from '@/components/analytics/analytics-chart-card'
@@ -118,7 +120,12 @@ async function ExecutiveCharts() {
   )
 }
 
-export default function AnalyticsExecutivePage() {
+export default async function AnalyticsExecutivePage() {
+  const role = await getUserRole()
+  if (!['administrator', 'admin'].includes(role)) {
+    const { getAnalyticsDefaultPath } = await import('@/config/nav-roles')
+    redirect(getAnalyticsDefaultPath(role))
+  }
   return (
     <div className="space-y-6">
       <Suspense fallback={<KpiSkeleton />}>

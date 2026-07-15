@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { ShoppingCart } from 'lucide-react'
 import { getVendorUser, getVendorPurchaseOrders } from '@/lib/supabase/vendor-portal'
 import { redirect } from 'next/navigation'
+
+export const dynamic = 'force-dynamic'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import { Skeleton, EmptyState } from '@/components/shared/loading-states'
 import { Button } from '@/components/ui/button'

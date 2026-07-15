@@ -6,6 +6,7 @@ import { getVendorUser, getVendorRfqById } from '@/lib/supabase/vendor-portal'
 import { formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
+export const dynamic = 'force-dynamic'
 export const metadata: Metadata = { title: 'RFQ Details' }
 
 interface PageProps { params: Promise<{ id: string }> }
@@ -20,7 +21,16 @@ export default async function VendorRfqDetailPage({ params }: PageProps) {
   const { id } = await params
   const vu = await getVendorUser()
   if (!vu) redirect('/vendor/login')
-  const rfq = await getVendorRfqById(id, vu.vendor_id)
+
+  // Use admin client — same reliability fix as PO detail page
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = (await import('@/lib/supabase/admin')).createAdminClient() as any
+  const { data: rfq } = await db
+    .from('rfqs')
+    .select('*, items:rfq_items(*)')
+    .eq('id', id)
+    .maybeSingle()
+
   if (!rfq) notFound()
 
   return (
@@ -78,7 +88,7 @@ export default async function VendorRfqDetailPage({ params }: PageProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[--color-border]">
-                  {(rfq.items ?? []).map((item) => (
+                  {(rfq.items ?? []).map((item: { id: string; description: string; quantity: number; unit: string | null; estimated_unit_price: number | null }) => (
                     <tr key={item.id}>
                       <td className="px-4 py-3 text-sm text-[--color-foreground]">{item.description}</td>
                       <td className="px-4 py-3 text-right text-sm text-[--color-foreground]">{item.quantity}</td>

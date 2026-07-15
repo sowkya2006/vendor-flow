@@ -39,7 +39,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const supabase = createClient()
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data, error }) => {
+      // 'Invalid Refresh Token' is a non-fatal error that occurs when
+      // the stored refresh token is stale (e.g. after clearing data).
+      // Suppress it — the user simply has no session.
+      if (error && !error.message?.includes('Refresh Token')) {
+        console.error('[AuthProvider] getSession error:', error.message)
+      }
       setSession(data.session)
       setUser(data.session?.user ?? null)
       setLoading(false)

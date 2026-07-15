@@ -25,8 +25,10 @@ export function RFQFormClient({ rfq, vendors, mode }: RFQFormClientProps) {
       // redirect() in the action will navigate before this line is reached
     } catch (err) {
       if (isRedirectError(err)) throw err
-      // Only show error toast for genuine failures
-      toast.error(mode === 'create' ? 'Failed to create RFQ' : 'Failed to update RFQ')
+      // Show the actual error message so we can debug
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[RFQFormClient] submit error:', err)
+      toast.error(message || (mode === 'create' ? 'Failed to create RFQ' : 'Failed to update RFQ'))
       throw err
     }
   }

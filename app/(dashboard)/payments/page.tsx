@@ -57,7 +57,7 @@ async function RecentInvoices({ companyId }: { companyId: string }) {
           <Link
             key={inv.id}
             href={`/payments/invoices/${inv.id}`}
-            className="group flex items-center gap-4 rounded-xl border border-[--color-border] bg-[--color-card] px-5 py-4 shadow-[--shadow-sm] transition-shadow hover:shadow-[--shadow-md]"
+            className="group flex items-center gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-5 py-4 shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-all duration-200 hover:border-[#4F8CFF]/30 hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)] hover:-translate-y-0.5"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[--color-primary]/10 text-[--color-primary]">
               <FileText className="h-4 w-4" />
@@ -162,12 +162,12 @@ export default async function PaymentsDashboardPage() {
     <PageContainer>
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[--color-primary]/10 text-[--color-primary]">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[--color-primary]/10 to-indigo-500/10 border border-[--color-primary]/15 text-[--color-primary]">
             <CreditCard className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-[--color-foreground]">Finance</h1>
+            <h1 className="text-xl font-bold tracking-tight text-[--color-foreground]">Finance</h1>
             <p className="text-xs text-[--color-foreground-muted]">Invoice management and payment tracking</p>
           </div>
         </div>

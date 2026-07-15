@@ -7,7 +7,10 @@ import { useUIStore } from '@/store/ui-store'
 import { Sidebar } from './sidebar'
 import { Button } from '@/components/ui/button'
 
-export function MobileSidebar() {
+export function MobileSidebar({ initialRole, workspaceName }: {
+  initialRole?: string
+  workspaceName?: string
+}) {
   const { sidebarMobileOpen, setSidebarMobileOpen } = useUIStore()
 
   // Close on route change via escape key
@@ -43,7 +46,7 @@ export function MobileSidebar() {
             className="fixed inset-y-0 left-0 z-[50] md:hidden"
           >
             <div className="relative">
-              <Sidebar />
+              <Sidebar initialRole={initialRole} workspaceName={workspaceName} />
               <Button
                 variant="ghost"
                 size="icon-sm"

@@ -50,7 +50,7 @@ export function AuthSync() {
         if (co) {
           setCurrentWorkspace({
             id: co.id,
-            name: co.workspace_name ?? co.name ?? 'VendorFlow',
+            name: co.workspace_name ?? (co.name && !co.name.includes('@') ? co.name : 'My Workspace'),
             slug: co.id,
             plan: 'growth',
             createdAt: new Date().toISOString(),
@@ -61,11 +61,15 @@ export function AuthSync() {
 
       setCurrentUser({
         id: user!.id,
-        name: dbUser?.full_name ?? user!.user_metadata?.full_name ?? user!.email?.split('@')[0] ?? 'User',
+        name: (dbUser?.full_name && dbUser.full_name !== 'User')
+          ? dbUser.full_name
+          : (user!.user_metadata?.full_name ?? user!.email?.split('@')[0] ?? 'User'),
         email: user!.email ?? '',
         avatar: user!.user_metadata?.avatar_url ?? undefined,
         role: (dbUser?.role ?? 'member') as UserRole,
         workspaceId: dbUser?.company_id ?? '',
+        department: dbUser?.department ?? null,
+        designation: dbUser?.designation ?? null,
         createdAt: user!.created_at,
         updatedAt: user!.updated_at ?? user!.created_at,
       })

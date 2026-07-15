@@ -125,7 +125,7 @@ export async function createQuotation(
       lead_time_days: fields.lead_time_days ?? null,
       warranty_months: fields.warranty_months ?? null,
       payment_terms: fields.payment_terms ?? null,
-      validity_date: fields.validity_date ?? null,
+      valid_until: fields.validity_date ?? null,
       notes: fields.notes ?? null,
     })
     .select()
@@ -154,10 +154,15 @@ export async function updateQuotation(
 
   const nullable = [
     'delivery_days', 'lead_time_days', 'warranty_months',
-    'payment_terms', 'validity_date', 'notes',
+    'payment_terms', 'valid_until', 'notes',
   ] as const
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sanitized: Record<string, any> = { ...fields }
+  // Rename validity_date → valid_until if caller passed the old name
+  if ('validity_date' in sanitized) {
+    sanitized.valid_until = sanitized.validity_date
+    delete sanitized.validity_date
+  }
   for (const key of nullable) {
     if (key in sanitized && (sanitized[key] === '' || sanitized[key] === undefined)) {
       sanitized[key] = null
@@ -492,4 +497,68 @@ async function logHistory(
     new_values: newValues,
     performed_by: userId,
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Approved quotations available for PO creation
+// Returns quotations that are:
+//  - Status: 'approved'
+//  - No existing PO linked (purchase_orders.quotation_id IS NULL)
+// ─────────────────────────────────────────────────────────────────────────────
+export interface ApprovedQuotationForPO {
+  id: string
+  quotation_number: string
+  grand_total: number | null
+  approved_at: string | null
+  notes: string | null
+  payment_terms: string | null
+  delivery_days: number | null
+  vendor_id: string
+  rfq_id: string | null
+  vendor: { id: string; name: string; email: string | null; address: string | null } | null
+  rfq: { id: string; rfq_number: string; title: string } | null
+  items: {
+    id: string
+    item_name: string
+    description: string | null
+    quantity: number
+    unit: string | null
+    unit_price: number
+    tax_pct: number | null
+    line_total: number | null
+  }[]
+}
+
+export async function getApprovedQuotationsForPO(
+  companyId: string,
+): Promise<ApprovedQuotationForPO[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = (await createClient()) as unknown as { from: (t: string) => any }
+
+  // Get approved quotations that don't have a PO yet
+  const { data, error } = await supabase
+    .from('quotations')
+    .select(`
+      id, quotation_number, grand_total, updated_at, notes,
+      payment_terms, delivery_days, vendor_id, rfq_id,
+      vendor:vendors(id, name, email, address),
+      rfq:rfqs(id, rfq_number, title),
+      items:quotation_items(id, item_name, description, quantity, unit, unit_price, tax_pct, line_total)
+    `)
+    .eq('company_id', companyId)
+    .eq('status', 'approved')
+    .order('updated_at', { ascending: false })
+
+  if (error) return []
+
+  // Filter out quotations that already have a PO
+  const { data: existingPOs } = await supabase
+    .from('purchase_orders')
+    .select('quotation_id')
+    .eq('company_id', companyId)
+    .not('quotation_id', 'is', null)
+
+  const usedQuotationIds = new Set((existingPOs ?? []).map((p: { quotation_id: string }) => p.quotation_id))
+
+  return ((data ?? []) as ApprovedQuotationForPO[]).filter((q) => !usedQuotationIds.has(q.id))
 }

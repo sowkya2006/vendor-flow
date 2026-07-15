@@ -9550,7 +9550,7 @@ IP Whitelist        [comma-separated IPs, optional]
 ─── After creation (shown ONCE) ───────────────────────
 Your new API key:
 ┌──────────────────────────────────────────────────────┐
-│  sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │
+│  YOUR_STRIPE_SECRET_KEY │
 │                                            [Copy]    │
 └──────────────────────────────────────────────────────┘
 ⚠ Copy this key now. You won't be able to see it again.

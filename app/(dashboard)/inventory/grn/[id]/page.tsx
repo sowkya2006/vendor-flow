@@ -1,13 +1,13 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ClipboardList, ArrowLeft, CheckCircle, XCircle, Warehouse } from 'lucide-react'
+import { ClipboardList, ArrowLeft, CheckCircle, XCircle, Warehouse, RefreshCw } from 'lucide-react'
 import { PageContainer } from '@/components/shared/page-container'
 import { GrnStatusBadge } from '@/components/inventory/stock-status-badge'
 import { getGrnById } from '@/lib/supabase/inventory'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { completeGrnAction, cancelGrnAction, deleteGrnAction } from '@/app/(dashboard)/inventory/actions'
+import { completeGrnAction, cancelGrnAction, deleteGrnAction, resyncGrnInventoryAction } from '@/app/(dashboard)/inventory/actions'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -67,6 +67,14 @@ export default async function GrnDetailPage({ params }: PageProps) {
               </form>
             </div>
           )}
+          {grn.status === 'completed' && (
+            <form action={resyncGrnInventoryAction.bind(null, id)}>
+              <Button type="submit" variant="outline" size="sm" className="gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5" />
+                Re-sync Inventory
+              </Button>
+            </form>
+          )}
         </div>
       </div>
 
@@ -80,39 +88,70 @@ export default async function GrnDetailPage({ params }: PageProps) {
             </div>
 
             {(grn.grn_items ?? []).length === 0 ? (
-              <p className="px-5 py-4 text-sm text-[--color-foreground-muted]">No items on this GRN.</p>
+              <div className="px-5 py-8 text-center">
+                <p className="text-sm font-medium text-[--color-foreground-muted]">No items on this GRN.</p>
+                <p className="text-xs text-[--color-foreground-subtle] mt-1">
+                  Items were not saved. Please delete this GRN and create a new one with a Purchase Order selected.
+                </p>
+              </div>
             ) : (
               <div className="divide-y divide-[--color-border]">
-                {(grn.grn_items ?? []).map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-4 px-5 py-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[--color-foreground] truncate">
-                        {item.product?.name ?? '—'}
-                      </p>
-                      <p className="text-xs text-[--color-foreground-muted]">
-                        SKU: {item.product?.sku ?? '—'} · {item.product?.unit ?? ''}
-                      </p>
+                {(grn.grn_items ?? []).map((item) => {
+                  // Display name priority: linked product name → item_name → notes → "—"
+                  const displayName = item.product?.name ?? (item as { item_name?: string }).item_name ?? item.notes ?? '—'
+                  const displaySku = item.product?.sku ?? (item as { sku?: string }).sku ?? null
+                  const displayUnit = item.product?.unit ?? (item as { unit?: string }).unit ?? null
+                  const acceptedQty = (item as { accepted_quantity?: number }).accepted_quantity
+                  const rejectedQty = (item as { rejected_quantity?: number }).rejected_quantity
+                  const batchNum = (item as { batch_number?: string }).batch_number
+                  const warehouseLoc = (item as { warehouse_location?: string }).warehouse_location
+                  const damageNotes = (item as { damage_notes?: string }).damage_notes
+
+                  return (
+                    <div key={item.id} className="px-5 py-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-[--color-foreground] truncate">
+                            {displayName}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                            {displaySku && <p className="text-xs text-[--color-foreground-muted]">SKU: {displaySku}</p>}
+                            {displayUnit && <p className="text-xs text-[--color-foreground-muted]">Unit: {displayUnit}</p>}
+                            {batchNum && <p className="text-xs text-[--color-foreground-muted]">Batch: {batchNum}</p>}
+                            {warehouseLoc && <p className="text-xs text-[--color-foreground-muted]">Location: {warehouseLoc}</p>}
+                          </div>
+                          {damageNotes && (
+                            <p className="text-xs text-red-600 mt-1">⚠ Damage: {damageNotes}</p>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0 space-y-0.5">
+                          <p className="text-sm font-semibold text-[--color-foreground]">
+                            {item.received_quantity} received
+                          </p>
+                          {item.ordered_quantity > 0 && (
+                            <p className="text-xs text-[--color-foreground-muted]">
+                              of {item.ordered_quantity} ordered
+                            </p>
+                          )}
+                          {(acceptedQty != null || rejectedQty != null) && (
+                            <div className="flex items-center gap-2 text-xs">
+                              {acceptedQty != null && <span className="text-emerald-600">{acceptedQty} accepted</span>}
+                              {rejectedQty != null && rejectedQty > 0 && <span className="text-red-600">{rejectedQty} rejected</span>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0 min-w-[90px]">
+                          <p className="text-xs font-medium text-[--color-foreground]">
+                            {formatCurrency(item.unit_cost)} / unit
+                          </p>
+                          <p className="text-xs text-[--color-foreground-muted]">
+                            {formatCurrency(item.received_quantity * item.unit_cost)}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-semibold text-[--color-foreground]">
-                        {item.received_quantity} received
-                      </p>
-                      {item.ordered_quantity > 0 && (
-                        <p className="text-xs text-[--color-foreground-muted]">
-                          of {item.ordered_quantity} ordered
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-right shrink-0 min-w-[90px]">
-                      <p className="text-xs font-medium text-[--color-foreground]">
-                        {formatCurrency(item.unit_cost)} / unit
-                      </p>
-                      <p className="text-xs text-[--color-foreground-muted]">
-                        {formatCurrency(item.received_quantity * item.unit_cost)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 

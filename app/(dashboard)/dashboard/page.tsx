@@ -1,206 +1,132 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
-import { KpiGrid } from '@/components/dashboard/kpi-grid'
+import { createClient } from '@/lib/supabase/server'
+import { getPreviewRole } from '@/app/actions/role-preview'
+
+// Role-specific dashboards
+import { ProcurementOfficerDashboard } from '@/components/dashboard/role-dashboards/procurement-officer-dashboard'
+import { ProcurementManagerDashboard } from '@/components/dashboard/role-dashboards/procurement-manager-dashboard'
+import { WarehouseManagerDashboard } from '@/components/dashboard/role-dashboards/warehouse-manager-dashboard'
+import { FinanceManagerDashboard } from '@/components/dashboard/role-dashboards/finance-manager-dashboard'
+
+// Premium glass dashboard components
+import { GlassDashboardHeader } from '@/components/dashboard/glass-dashboard-header'
+import { GlassKpiGrid } from '@/components/dashboard/glass-kpi-grid'
+import { GlassQuickActions } from '@/components/dashboard/glass-quick-actions'
+import { GlassActivityFeed } from '@/components/dashboard/glass-activity-feed'
+import { GlassRecentTable } from '@/components/dashboard/glass-recent-table'
+import { ProcurementWorkflow } from '@/components/dashboard/procurement-workflow'
 import {
-  ProcurementSpendChart,
-  PurchaseTrendChart,
-  VendorCategoriesChart,
-  RfqStatusChart,
-} from '@/components/dashboard/charts'
-import { RecentActivity } from '@/components/dashboard/recent-activity'
-import {
-  RecentVendorsTable,
-  RecentRfqsTable,
-  RecentPurchaseOrdersTable,
-} from '@/components/dashboard/data-tables'
-import { NotificationsPanel } from '@/components/dashboard/notifications-panel'
-import { QuickActions } from '@/components/dashboard/quick-actions'
-import { CalendarWidget } from '@/components/dashboard/calendar-widget'
-import { DashboardHeader } from '@/components/dashboard/dashboard-header'
-import { QuotationStatsWidget } from '@/components/dashboard/quotation-stats-widget'
-import { ApprovalStatsWidget } from '@/components/dashboard/approval-stats-widget'
-import { RoleDashboardRouter } from '@/components/dashboard/role-dashboard-router'
+  GlassSpendChart,
+  GlassProcurementDonut,
+  GlassVendorPerformance,
+  GlassInventoryHealth,
+} from '@/components/dashboard/glass-charts'
 import { Skeleton } from '@/components/shared/loading-states'
 
 export const metadata: Metadata = { title: 'Dashboard — VendorFlow' }
 
-// ── Skeleton helpers ──────────────────────────────────────────────────────────
-
-function KpiSkeleton() {
+function GlassSkeleton({ h = 'h-40' }: { h?: string }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="rounded-xl border border-[--color-border] bg-[--color-card] p-5 space-y-3">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-7 w-20" />
-          <Skeleton className="h-3 w-32" />
-        </div>
-      ))}
-    </div>
+    <div
+      className={`${h} rounded-2xl animate-pulse`}
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+    />
   )
 }
 
-function ChartSkeleton() {
+function AdminDashboard() {
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-card] p-5 space-y-3">
-      <Skeleton className="h-4 w-40" />
-      <Skeleton className="h-[240px] w-full" />
-    </div>
-  )
-}
+    <div className="dash-dark relative min-h-full">
+      <div className="relative z-10 mx-auto max-w-screen-2xl space-y-5 p-6">
 
-function TableSkeleton() {
-  return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-card] overflow-hidden">
-      <div className="border-b border-[--color-border] px-5 py-4 space-y-1">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-3 w-48" />
-      </div>
-      <div className="p-4 space-y-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="flex items-center gap-3">
-            <Skeleton className="h-7 w-7 rounded-md" />
-            <div className="flex-1 space-y-1.5">
-              <Skeleton className="h-3 w-36" />
-              <Skeleton className="h-2.5 w-24" />
-            </div>
-            <Skeleton className="h-5 w-16 rounded-full" />
+        {/* Hero header */}
+        <Suspense fallback={<GlassSkeleton h="h-28" />}>
+          <GlassDashboardHeader />
+        </Suspense>
+
+        {/* KPI cards */}
+        <Suspense fallback={
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => <GlassSkeleton key={i} h="h-[120px]" />)}
           </div>
-        ))}
-      </div>
-    </div>
-  )
-}
+        }>
+          <GlassKpiGrid />
+        </Suspense>
 
-function PanelSkeleton() {
-  return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-card] overflow-hidden">
-      <div className="border-b border-[--color-border] px-5 py-4">
-        <Skeleton className="h-4 w-28" />
-      </div>
-      <div className="p-4 space-y-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="flex items-start gap-3">
-            <Skeleton className="h-7 w-7 rounded-lg mt-0.5" />
-            <div className="flex-1 space-y-1.5">
-              <Skeleton className="h-3 w-40" />
-              <Skeleton className="h-2.5 w-52" />
+        {/* Main grid: charts + workflow */}
+        <div className="grid gap-5 xl:grid-cols-4">
+          {/* Charts column — 3 cols */}
+          <div className="xl:col-span-3 space-y-5">
+            {/* Spend + Donut row */}
+            <div className="grid gap-5 lg:grid-cols-2">
+              <Suspense fallback={<GlassSkeleton h="h-64" />}>
+                <GlassSpendChart />
+              </Suspense>
+              <Suspense fallback={<GlassSkeleton h="h-64" />}>
+                <GlassProcurementDonut />
+              </Suspense>
+            </div>
+
+            {/* Vendor perf + Inventory row */}
+            <div className="grid gap-5 lg:grid-cols-2">
+              <Suspense fallback={<GlassSkeleton h="h-56" />}>
+                <GlassVendorPerformance />
+              </Suspense>
+              <Suspense fallback={<GlassSkeleton h="h-56" />}>
+                <GlassInventoryHealth />
+              </Suspense>
             </div>
           </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
-function QuotationStatsSkeleton() {
-  return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-card] shadow-[--shadow-sm] p-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="rounded-lg border border-[--color-border] bg-[--color-background-subtle] p-3.5 space-y-2">
-            <Skeleton className="h-3 w-16" />
-            <Skeleton className="h-5 w-10" />
+          {/* Right column — workflow + quick actions */}
+          <div className="space-y-5">
+            <ProcurementWorkflow />
+            <GlassQuickActions />
           </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ApprovalStatsSkeleton() {
-  return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-card] shadow-[--shadow-sm] p-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="rounded-lg border border-[--color-border] bg-[--color-background-subtle] p-3.5 space-y-2">
-            <Skeleton className="h-3 w-16" />
-            <Skeleton className="h-5 w-10" />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ── Page ──────────────────────────────────────────────────────────────────────
-
-export default function DashboardPage() {
-  return (
-    <div className="min-h-full">
-      <DashboardHeader />
-
-      <div className="mx-auto max-w-screen-2xl space-y-6 p-6">
-        {/* KPI Cards — live data */}
-        <Suspense fallback={<KpiSkeleton />}>
-          <KpiGrid />
-        </Suspense>
-
-        {/* Quick Actions */}
-        <QuickActions />
-
-        {/* Role-contextual quick links */}
-        <RoleDashboardRouter />
-
-        {/* Quotation Stats — live data */}
-        <Suspense fallback={<QuotationStatsSkeleton />}>
-          <QuotationStatsWidget />
-        </Suspense>
-
-        {/* Approval Stats — live data */}
-        <Suspense fallback={<ApprovalStatsSkeleton />}>
-          <ApprovalStatsWidget />
-        </Suspense>
-
-        {/* Charts — 2 columns, live data */}
-        <div className="grid gap-5 lg:grid-cols-2">
-          <Suspense fallback={<ChartSkeleton />}>
-            <ProcurementSpendChart />
-          </Suspense>
-          <Suspense fallback={<ChartSkeleton />}>
-            <PurchaseTrendChart />
-          </Suspense>
         </div>
 
-        {/* Pie / Donut + Notifications — live data */}
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Suspense fallback={<ChartSkeleton />}>
-            <VendorCategoriesChart />
-          </Suspense>
-          <Suspense fallback={<ChartSkeleton />}>
-            <RfqStatusChart />
-          </Suspense>
-          <Suspense fallback={<PanelSkeleton />}>
-            <NotificationsPanel />
-          </Suspense>
-        </div>
-
-        {/* Activity + Calendar — live data */}
-        <div className="grid gap-5 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <Suspense fallback={<PanelSkeleton />}>
-              <RecentActivity />
+        {/* Bottom grid: table + activity */}
+        <div className="grid gap-5 xl:grid-cols-3">
+          <div className="xl:col-span-2">
+            <Suspense fallback={<GlassSkeleton h="h-64" />}>
+              <GlassRecentTable />
             </Suspense>
           </div>
-          <Suspense fallback={<PanelSkeleton />}>
-            <CalendarWidget />
+          <Suspense fallback={<GlassSkeleton h="h-64" />}>
+            <GlassActivityFeed />
           </Suspense>
         </div>
 
-        {/* Tables — live data */}
-        <Suspense fallback={<TableSkeleton />}>
-          <RecentVendorsTable />
-        </Suspense>
-
-        <div className="grid gap-5 lg:grid-cols-2">
-          <Suspense fallback={<TableSkeleton />}>
-            <RecentRfqsTable />
-          </Suspense>
-          <Suspense fallback={<TableSkeleton />}>
-            <RecentPurchaseOrdersTable />
-          </Suspense>
-        </div>
       </div>
     </div>
   )
+}
+
+export default async function DashboardPage() {
+  let realRole = 'viewer'
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any).from('users').select('role').eq('id', user.id).single()
+      realRole = (data as { role: string } | null)?.role ?? 'viewer'
+    }
+  } catch { /* not authenticated */ }
+
+  const previewRole = (realRole === 'administrator' || realRole === 'admin')
+    ? await getPreviewRole()
+    : null
+
+  const effectiveRole = previewRole ?? realRole
+
+  switch (effectiveRole) {
+    case 'procurement_officer':  return <ProcurementOfficerDashboard />
+    case 'procurement_manager':  return <ProcurementManagerDashboard />
+    case 'warehouse_manager':    return <WarehouseManagerDashboard />
+    case 'finance_manager':      return <FinanceManagerDashboard />
+    default:
+      return <AdminDashboard />
+  }
 }

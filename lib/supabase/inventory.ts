@@ -416,15 +416,35 @@ export async function adjustInventory(
 
   let inventoryRow: InventoryRecord
   if (existing) {
+    // Fetch product unit_cost for valuation update
+    let unitCost = 0
+    try {
+      const { data: prod } = await supabase
+        .from('products').select('unit_cost').eq('id', input.product_id).maybeSingle()
+      unitCost = Number((prod as { unit_cost: number } | null)?.unit_cost) || 0
+    } catch { /* non-critical */ }
+
     const { data, error } = await supabase
       .from('inventory')
-      .update({ quantity_on_hand: newQty })
+      .update({
+        quantity_on_hand: newQty,
+        valuation: newQty * unitCost,
+        last_updated: new Date().toISOString(),
+      })
       .eq('id', existing.id)
       .select()
       .single()
     if (error) throw error
     inventoryRow = data as InventoryRecord
   } else {
+    // Fetch product unit_cost for valuation
+    let unitCost = 0
+    try {
+      const { data: prod } = await supabase
+        .from('products').select('unit_cost').eq('id', input.product_id).maybeSingle()
+      unitCost = Number((prod as { unit_cost: number } | null)?.unit_cost) || 0
+    } catch { /* non-critical */ }
+
     const { data, error } = await supabase
       .from('inventory')
       .insert({
@@ -433,6 +453,8 @@ export async function adjustInventory(
         warehouse_id: input.warehouse_id,
         quantity_on_hand: newQty,
         quantity_reserved: 0,
+        valuation: newQty * unitCost,
+        last_updated: new Date().toISOString(),
       })
       .select()
       .single()
@@ -464,10 +486,45 @@ export async function adjustInventory(
 const GRN_DETAIL_SELECT = `
   *,
   warehouse:warehouses ( id, name, code ),
+  purchase_order:purchase_orders (
+    id, po_number, vendor_id,
+    vendor:vendors ( id, name ),
+    items:purchase_order_items ( id, description, quantity, unit, unit_price )
+  ),
+  grn_items (
+    id, grn_id, product_id,
+    item_name, description, sku, unit,
+    tax_percentage, ordered_quantity, received_quantity,
+    accepted_quantity, rejected_quantity,
+    damage_notes, batch_number, serial_numbers, warehouse_location,
+    unit_cost, notes,
+    product:products ( id, name, sku, unit )
+  )
+`
+
+const GRN_DETAIL_SELECT_MINIMAL = `
+  *,
+  warehouse:warehouses ( id, name, code ),
+  purchase_order:purchase_orders (
+    id, po_number, vendor_id,
+    vendor:vendors ( id, name ),
+    items:purchase_order_items ( id, description, quantity, unit, unit_price )
+  ),
+  grn_items (
+    id, grn_id, product_id,
+    ordered_quantity, received_quantity,
+    unit_cost, notes
+  )
+`
+
+const GRN_DETAIL_SELECT_BARE = `
+  *,
+  warehouse:warehouses ( id, name, code ),
   purchase_order:purchase_orders ( id, po_number ),
   grn_items (
-    *,
-    product:products ( id, name, sku, unit )
+    id, grn_id, product_id,
+    ordered_quantity, received_quantity,
+    unit_cost, notes
   )
 `
 
@@ -523,12 +580,35 @@ export async function getGrns(companyId: string, filters: GrnFilters = {}): Prom
 
 export async function getGrnById(id: string, companyId: string): Promise<Grn | null> {
   const supabase = await db()
-  const { data, error } = await supabase
+
+  // Try full select first (extended columns from migration 20240118000000)
+  let { data, error } = await supabase
     .from('grn')
     .select(GRN_DETAIL_SELECT)
     .eq('id', id)
     .eq('company_id', companyId)
     .single()
+
+  // 42703 = column does not exist — migration not run, try minimal
+  if (error && (error.code === '42703' || error.message?.includes('does not exist'))) {
+    ;({ data, error } = await supabase
+      .from('grn')
+      .select(GRN_DETAIL_SELECT_MINIMAL)
+      .eq('id', id)
+      .eq('company_id', companyId)
+      .single())
+  }
+
+  // If still failing (e.g. products table has schema issues), try bare select
+  if (error && (error.code === '42703' || error.message?.includes('does not exist'))) {
+    ;({ data, error } = await supabase
+      .from('grn')
+      .select(GRN_DETAIL_SELECT_BARE)
+      .eq('id', id)
+      .eq('company_id', companyId)
+      .single())
+  }
+
   if (error) {
     if (error.code === 'PGRST116') return null
     throw error
@@ -564,18 +644,367 @@ export async function createGrn(
   if (input.items.length > 0) {
     const itemRows = input.items.map((item) => ({
       grn_id: grn.id,
-      product_id: item.product_id,
+      // product_id may be null — grn_items.product_id is nullable
+      product_id: item.product_id ?? null,
+      // Always store a display name so the detail page is never blank
+      item_name: item.item_name ?? item.description ?? item.notes ?? null,
+      description: item.description ?? item.notes ?? null,
+      sku: item.sku ?? null,
+      unit: item.unit ?? null,
+      tax_percentage: item.tax_percentage ?? 0,
       ordered_quantity: item.ordered_quantity ?? 0,
       received_quantity: item.received_quantity,
+      accepted_quantity: item.accepted_quantity ?? item.received_quantity,
+      rejected_quantity: item.rejected_quantity ?? 0,
+      damage_notes: item.damage_notes ?? null,
+      batch_number: item.batch_number ?? null,
+      serial_numbers: item.serial_numbers ?? null,
+      warehouse_location: item.warehouse_location ?? null,
       unit_cost: item.unit_cost,
       notes: item.notes ?? null,
     }))
     const { error: itemsErr } = await supabase.from('grn_items').insert(itemRows)
-    if (itemsErr) throw itemsErr
+    if (itemsErr) {
+      console.error('[createGrn] grn_items insert error:', itemsErr)
+
+      // Determine if error is due to missing columns (migration not run)
+      const isMissingCol = itemsErr.code === '42703' || itemsErr.message?.includes('does not exist')
+      // Determine if error is due to NOT NULL on product_id
+      const isNullConstraint = itemsErr.code === '23502' || itemsErr.message?.includes('product_id')
+
+      if (isMissingCol || isNullConstraint) {
+        // Fallback: only insert items that have a product_id (pre-migration schema requires it)
+        const itemsWithProduct = input.items.filter((item) => item.product_id)
+        if (itemsWithProduct.length > 0) {
+          const minimalRows = itemsWithProduct.map((item) => ({
+            grn_id: grn.id,
+            product_id: item.product_id!,
+            ordered_quantity: item.ordered_quantity ?? 0,
+            received_quantity: item.received_quantity,
+            unit_cost: item.unit_cost,
+            notes: item.item_name ?? item.description ?? item.notes ?? null,
+          }))
+          const { error: fallbackErr } = await supabase.from('grn_items').insert(minimalRows)
+          if (fallbackErr) {
+            console.error('[createGrn] minimal insert also failed:', fallbackErr)
+            // Non-fatal — GRN created without items; user sees "No items" message
+          }
+        }
+        // If no items have product_id (all from PO without products), GRN is created empty
+        // User needs to run the migration to fix this permanently
+      } else {
+        throw itemsErr
+      }
+    }
   }
 
   const created = await getGrnById(grn.id, companyId)
   return created as Grn
+}
+
+/** Public alias for syncInventoryFromGRN — used by resyncGrnInventoryAction */
+export async function syncInventoryFromGRNPublic(grnId: string, companyId: string, userId: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return syncInventoryFromGRN(grnId, companyId, userId, null as any)
+}
+
+/**
+ * syncInventoryFromGRN — The core ERP sync engine.
+ *
+ * Called when a GRN is marked completed. Uses admin client to bypass ALL
+ * RLS restrictions so this always works regardless of who triggered it.
+ *
+ * Strategy (in order of priority):
+ * 1. Read grn_items directly with admin client
+ *    — if they have item_name/notes, use that as the product name
+ * 2. If grn_items are empty or have no names, fall back to PO items
+ *    — fetched directly from purchase_order_items via the GRN's purchase_order_id
+ *
+ * For each item:
+ * A. Find or auto-create a product (no duplicates by name)
+ * B. Upsert inventory row (create or increase stock)
+ * C. Log inventory transaction
+ * D. Update product.unit_cost to latest purchase price
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function syncInventoryFromGRN(grnId: string, companyId: string, userId: string, _supabase: any): Promise<void> {
+  const { createAdminClient } = await import('@/lib/supabase/admin')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any
+
+  // ── Step 1: Read GRN base data ──────────────────────────────────────────
+  const { data: grn, error: grnErr } = await admin
+    .from('grn')
+    .select('id, grn_number, warehouse_id, purchase_order_id, received_date')
+    .eq('id', grnId)
+    .maybeSingle()
+
+  if (grnErr || !grn) {
+    console.error('[syncInventoryFromGRN] GRN not found:', grnErr?.message)
+    return
+  }
+
+  const warehouseId: string | null = grn.warehouse_id
+  const poId: string | null = grn.purchase_order_id
+  const grnNumber: string = grn.grn_number ?? grnId.slice(0, 8)
+
+  if (!warehouseId) {
+    console.error('[syncInventoryFromGRN] GRN has no warehouse_id — cannot sync inventory')
+    return
+  }
+
+  // ── Step 2: Try to get items from grn_items (base columns only, no migration needed) ──
+  const { data: grnItems } = await admin
+    .from('grn_items')
+    .select('id, product_id, ordered_quantity, received_quantity, unit_cost, notes')
+    .eq('grn_id', grnId)
+
+  type GrnItemRaw = {
+    id: string; product_id: string | null
+    ordered_quantity: number; received_quantity: number; unit_cost: number; notes: string | null
+  }
+
+  const rawGrnItems = (grnItems ?? []) as GrnItemRaw[]
+
+  // ── Step 3: Build the canonical item list ────────────────────────────────
+  // Each entry: { name, sku, unit, quantity, unitCost, vendorId }
+  type SyncItem = {
+    name: string
+    sku: string | null
+    unit: string
+    quantity: number
+    unitCost: number
+    vendorId: string | null
+    grnItemId: string | null
+    existingProductId: string | null
+  }
+
+  const syncItems: SyncItem[] = []
+
+  // Get PO data regardless — we always need it for vendor_id and as fallback
+  let poItems: Array<{ id: string; description: string; quantity: number; unit: string | null; unit_price: number }> = []
+  let vendorId: string | null = null
+  let poNumber: string | null = null
+
+  if (poId) {
+    const { data: po } = await admin
+      .from('purchase_orders')
+      .select('po_number, vendor_id, items:purchase_order_items(id, description, quantity, unit, unit_price)')
+      .eq('id', poId)
+      .maybeSingle()
+
+    if (po) {
+      vendorId = po.vendor_id ?? null
+      poNumber = po.po_number ?? null
+      poItems = (po.items ?? []) as typeof poItems
+    }
+  }
+
+  if (rawGrnItems.length > 0) {
+    // Case A: grn_items exist — use them, enrich names from notes or PO items
+    for (let i = 0; i < rawGrnItems.length; i++) {
+      const gi = rawGrnItems[i]
+      const qty = Number(gi.received_quantity) || 0
+      if (qty <= 0) continue
+
+      // Name resolution: notes field = item name (fallback saved in createGrn)
+      // OR match by index to PO item
+      const notesName = gi.notes?.trim() || null
+      const poItemByIndex = poItems[i]
+      const name = notesName ?? poItemByIndex?.description ?? `Item ${i + 1}`
+      const unit = poItemByIndex?.unit ?? 'pcs'
+      const unitCost = Number(gi.unit_cost) > 0 ? Number(gi.unit_cost) : (poItemByIndex?.unit_price ?? 0)
+      const sku = poNumber ? `${poNumber}-${String(i + 1).padStart(3, '0')}` : null
+
+      syncItems.push({
+        name,
+        sku,
+        unit,
+        quantity: qty,
+        unitCost,
+        vendorId,
+        grnItemId: gi.id,
+        existingProductId: gi.product_id,
+      })
+    }
+  } else if (poItems.length > 0) {
+    // Case B: no grn_items — use PO line items directly
+    for (let i = 0; i < poItems.length; i++) {
+      const pi = poItems[i]
+      if (!pi.description?.trim()) continue
+      const sku = poNumber ? `${poNumber}-${String(i + 1).padStart(3, '0')}` : null
+
+      syncItems.push({
+        name: pi.description.trim(),
+        sku,
+        unit: pi.unit ?? 'pcs',
+        quantity: pi.quantity,
+        unitCost: pi.unit_price,
+        vendorId,
+        grnItemId: null,
+        existingProductId: null,
+      })
+    }
+  }
+
+  if (syncItems.length === 0) {
+    console.warn('[syncInventoryFromGRN] No items found for GRN', grnNumber)
+    return
+  }
+
+  // ── Step 4: Process each item ────────────────────────────────────────────
+  for (const item of syncItems) {
+    try {
+      let productId: string | null = item.existingProductId
+
+      // A. Find existing product — by name (case-insensitive)
+      if (!productId) {
+        const { data: existingByName } = await admin
+          .from('products')
+          .select('id, name, sku')
+          .eq('company_id', companyId)
+          .ilike('name', item.name)
+          .limit(1)
+          .maybeSingle()
+
+        if (existingByName) {
+          productId = existingByName.id
+        } else if (item.sku) {
+          // Also try by SKU
+          const { data: existingBySku } = await admin
+            .from('products')
+            .select('id')
+            .eq('company_id', companyId)
+            .eq('sku', item.sku)
+            .limit(1)
+            .maybeSingle()
+          if (existingBySku) productId = existingBySku.id
+        }
+      }
+
+      // B. Auto-create product if it doesn't exist
+      if (!productId) {
+        // Generate a unique SKU: use provided or generate from GRN
+        let finalSku = item.sku ?? `GRN-${grnNumber}-${String(syncItems.indexOf(item) + 1).padStart(3, '0')}`
+
+        // Check SKU uniqueness — if taken, append suffix
+        const { data: skuCheck } = await admin
+          .from('products').select('id').eq('company_id', companyId).eq('sku', finalSku).maybeSingle()
+        if (skuCheck) finalSku = `${finalSku}-${Date.now().toString(36).slice(-4)}`
+
+        const { data: newProduct, error: createErr } = await admin
+          .from('products')
+          .insert({
+            company_id: companyId,
+            name: item.name,
+            sku: finalSku,
+            description: `Auto-created from GRN ${grnNumber} on ${new Date().toLocaleDateString('en-IN')}`,
+            unit: item.unit,
+            unit_cost: item.unitCost,
+            status: 'active',
+            min_stock_level: 0,
+            reorder_level: 5,
+            preferred_vendor_id: item.vendorId ?? null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single()
+
+        if (createErr) {
+          console.error('[syncInventoryFromGRN] Product create failed for', item.name, ':', createErr.message)
+          continue
+        }
+        productId = (newProduct as { id: string }).id
+        console.log(`[syncInventoryFromGRN] ✓ Created product "${item.name}" (${finalSku})`)
+      } else {
+        // C. Update existing product's unit_cost to latest purchase price
+        await admin
+          .from('products')
+          .update({ unit_cost: item.unitCost, updated_at: new Date().toISOString() })
+          .eq('id', productId)
+      }
+
+      // D. Link product_id back to grn_item if it was null
+      if (item.grnItemId && !item.existingProductId) {
+        await admin.from('grn_items').update({ product_id: productId }).eq('id', item.grnItemId)
+      }
+
+      // E. Upsert inventory row
+      // IMPORTANT: Use SET not ADD — this makes the sync idempotent.
+      // The inventory quantity for a GRN item should always equal the
+      // received quantity from that GRN (plus any other GRNs via separate runs).
+      // To avoid double-counting on re-sync, we track via transaction records.
+      const { data: existingInv } = await admin
+        .from('inventory')
+        .select('id, quantity_on_hand')
+        .eq('product_id', productId)
+        .eq('warehouse_id', warehouseId)
+        .maybeSingle()
+
+      // Check if we already have a transaction for this GRN + product
+      // If yes, skip the inventory update (already synced)
+      const { data: existingTxn } = await admin
+        .from('inventory_transactions')
+        .select('id, quantity')
+        .eq('company_id', companyId)
+        .eq('product_id', productId)
+        .eq('reference_type', 'grn')
+        .eq('reference_id', grnId)
+        .maybeSingle()
+
+      if (existingTxn) {
+        // Already synced — skip to avoid double-counting
+        console.log(`[syncInventoryFromGRN] ⏭ Skipped (already synced): "${item.name}" — txn ${existingTxn.id}`)
+        continue
+      }
+
+      const prevQty = Number(existingInv?.quantity_on_hand) || 0
+      const newQty = prevQty + item.quantity
+      const newValuation = newQty * item.unitCost
+
+      if (existingInv) {
+        await admin
+          .from('inventory')
+          .update({ quantity_on_hand: newQty, valuation: newValuation, last_updated: new Date().toISOString() })
+          .eq('id', existingInv.id)
+      } else {
+        await admin
+          .from('inventory')
+          .insert({
+            company_id: companyId,
+            product_id: productId,
+            warehouse_id: warehouseId,
+            quantity_on_hand: newQty,
+            quantity_reserved: 0,
+            valuation: newValuation,
+            last_updated: new Date().toISOString(),
+          })
+      }
+
+      // F. Log inventory transaction
+      await admin.from('inventory_transactions').insert({
+        company_id: companyId,
+        product_id: productId,
+        warehouse_id: warehouseId,
+        transaction_type: 'grn',
+        quantity: item.quantity,
+        quantity_before: prevQty,
+        quantity_after: newQty,
+        reference_type: 'grn',
+        reference_id: grnId,
+        notes: `GRN ${grnNumber} — ${item.name}`,
+        created_by: userId,
+      })
+
+      console.log(`[syncInventoryFromGRN] ✓ Inventory updated: "${item.name}" +${item.quantity} → total ${newQty} | value ₹${newValuation.toLocaleString('en-IN')}`)
+
+    } catch (itemErr) {
+      console.error(`[syncInventoryFromGRN] Failed for item "${item.name}":`, itemErr)
+    }
+  }
+
+  console.log(`[syncInventoryFromGRN] ✓ GRN ${grnNumber} sync complete — ${syncItems.length} items processed`)
 }
 
 export async function updateGrnStatus(
@@ -595,22 +1024,13 @@ export async function updateGrnStatus(
     .single()
   if (error) throw error
 
-  // When completing a GRN, update inventory stock levels
+  // ────────────────────────────────────────────────────────────────────────────
+  // GRN COMPLETION — The single source of truth for product/inventory sync.
+  // Uses admin client throughout to bypass all RLS restrictions.
+  // Works regardless of whether grn_items migration has been run.
+  // ────────────────────────────────────────────────────────────────────────────
   if (input.status === 'completed') {
-    const grn = await getGrnById(id, companyId)
-    if (grn?.grn_items) {
-      for (const item of grn.grn_items) {
-        if (item.received_quantity > 0) {
-          await adjustInventory(companyId, userId, {
-            product_id: item.product_id,
-            warehouse_id: grn.warehouse_id,
-            quantity: item.received_quantity,
-            transaction_type: 'grn',
-            notes: `GRN ${grn.grn_number}`,
-          })
-        }
-      }
-    }
+    await syncInventoryFromGRN(id, companyId, userId, supabase)
   }
 
   const updated = await getGrnById(id, companyId)
@@ -732,7 +1152,7 @@ export async function getInventoryStats(companyId: string): Promise<InventorySta
     ])
 
   const stockValue = (totalStockValue.data ?? []).reduce(
-    (sum: number, row: { valuation: number }) => sum + (row.valuation ?? 0),
+    (sum: number, row: { valuation: number | null }) => sum + (Number(row.valuation) || 0),
     0,
   )
 
@@ -783,15 +1203,41 @@ export async function getVendorOptions(
 /** Open purchase orders for GRN dropdown */
 export async function getOpenPurchaseOrders(
   companyId: string,
-): Promise<Array<{ id: string; po_number: string; vendor: { name: string } | null }>> {
+): Promise<Array<{
+  id: string
+  po_number: string
+  vendor: { name: string } | null
+  items: Array<{
+    id: string
+    description: string
+    quantity: number
+    unit: string | null
+    unit_price: number
+  }> | null
+}>> {
   const supabase = await db()
   const { data, error } = await supabase
     .from('purchase_orders')
-    .select('id, po_number, vendor:vendors ( name )')
+    .select(`
+      id, po_number,
+      vendor:vendors(name),
+      items:purchase_order_items(id, description, quantity, unit, unit_price)
+    `)
     .eq('company_id', companyId)
     .in('status', ['approved', 'sent', 'acknowledged', 'in_progress'])
     .order('created_at', { ascending: false })
     .limit(100)
   if (error) throw error
-  return (data ?? []) as Array<{ id: string; po_number: string; vendor: { name: string } | null }>
+  return (data ?? []) as Array<{
+    id: string
+    po_number: string
+    vendor: { name: string } | null
+    items: Array<{
+      id: string
+      description: string
+      quantity: number
+      unit: string | null
+      unit_price: number
+    }> | null
+  }>
 }

@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 import { Receipt, TrendingDown, CheckCircle2, CreditCard } from 'lucide-react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
 import { getFinanceAnalytics } from '@/lib/supabase/analytics'
 import { AnalyticsKpiCard } from '@/components/analytics/analytics-kpi-card'
 import { AnalyticsChartCard } from '@/components/analytics/analytics-chart-card'
@@ -164,7 +166,12 @@ async function FinanceContent() {
   )
 }
 
-export default function FinanceAnalyticsPage() {
+export default async function FinanceAnalyticsPage() {
+  const role = await getUserRole()
+  if (!['administrator', 'admin', 'finance_manager'].includes(role)) {
+    const { getAnalyticsDefaultPath } = await import('@/config/nav-roles')
+    redirect(getAnalyticsDefaultPath(role))
+  }
   return (
     <Suspense fallback={<PageSkeleton />}>
       <FinanceContent />

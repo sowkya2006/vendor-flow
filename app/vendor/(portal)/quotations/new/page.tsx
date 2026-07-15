@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowLeft, FileSearch } from 'lucide-react'
-import { getVendorUser, getVendorRFQsForQuotation } from '@/lib/supabase/vendor-portal'
+import { getVendorUser, getVendorRFQsForQuotation, getVendorRfqById } from '@/lib/supabase/vendor-portal'
 import { redirect } from 'next/navigation'
 import { VendorQuotationForm } from '@/components/vendor-portal/vendor-quotation-form'
 import { createVendorQuotationAction } from '@/app/vendor/actions'
@@ -15,6 +15,20 @@ export default async function NewVendorQuotationPage({ searchParams }: PageProps
   if (!vu) redirect('/vendor/login')
   const rfqOptions = await getVendorRFQsForQuotation(vu.vendor_id)
 
+  // Pre-fill line items from the selected RFQ
+  let rfqItems: Array<{ description: string; quantity: number; unit_price: number; tax_percentage: number }> = []
+  if (params.rfq_id) {
+    const rfq = await getVendorRfqById(params.rfq_id, vu.vendor_id)
+    if (rfq?.items && rfq.items.length > 0) {
+      rfqItems = rfq.items.map((item: { description: string; quantity: number; unit?: string | null; estimated_unit_price?: number | null }) => ({
+        description: item.description,
+        quantity: item.quantity,
+        unit_price: item.estimated_unit_price ?? 0,
+        tax_percentage: 0,
+      }))
+    }
+  }
+
   return (
     <div className="p-6 max-w-4xl space-y-5">
       <div>
@@ -24,7 +38,13 @@ export default async function NewVendorQuotationPage({ searchParams }: PageProps
           <div><h1 className="text-xl font-semibold text-[--color-foreground]">New Quotation</h1><p className="text-xs text-[--color-foreground-muted]">Submit a quotation to the procurement team</p></div>
         </div>
       </div>
-      <VendorQuotationForm rfqOptions={rfqOptions} defaultRfqId={params.rfq_id} onSubmit={createVendorQuotationAction} submitLabel="Create Quotation" />
+      <VendorQuotationForm
+        rfqOptions={rfqOptions}
+        defaultRfqId={params.rfq_id}
+        defaultValues={rfqItems.length > 0 ? { items: rfqItems } : undefined}
+        onSubmit={createVendorQuotationAction}
+        submitLabel="Create Quotation"
+      />
     </div>
   )
 }

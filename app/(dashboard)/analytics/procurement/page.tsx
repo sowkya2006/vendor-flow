@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 import { ShoppingCart, DollarSign, TrendingUp, Building2 } from 'lucide-react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
 import { getProcurementAnalytics } from '@/lib/supabase/analytics'
 import { AnalyticsKpiCard } from '@/components/analytics/analytics-kpi-card'
 import { AnalyticsChartCard } from '@/components/analytics/analytics-chart-card'
@@ -138,7 +140,12 @@ async function ProcurementContent() {
   )
 }
 
-export default function ProcurementAnalyticsPage() {
+export default async function ProcurementAnalyticsPage() {
+  const role = await getUserRole()
+  if (!['administrator', 'admin', 'procurement_manager', 'procurement_officer'].includes(role)) {
+    const { getAnalyticsDefaultPath } = await import('@/config/nav-roles')
+    redirect(getAnalyticsDefaultPath(role))
+  }
   return (
     <Suspense fallback={<SkeletonGrid />}>
       <ProcurementContent />

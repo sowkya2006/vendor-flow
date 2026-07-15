@@ -224,7 +224,7 @@ export async function updateInvoice(
 export async function updateInvoiceStatus(
   id: string,
   companyId: string,
-  status: 'submitted' | 'approved' | 'cancelled',
+  status: 'submitted' | 'approved' | 'rejected' | 'cancelled' | 'under_review',
 ): Promise<void> {
   const supabase = await db()
   const { error } = await supabase

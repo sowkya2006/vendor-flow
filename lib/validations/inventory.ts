@@ -101,9 +101,22 @@ export type AdjustInventoryInput = z.infer<typeof adjustInventorySchema>
 
 // ── GRN ───────────────────────────────────────────────────────
 export const grnItemSchema = z.object({
-  product_id: z.string().uuid('Invalid product'),
+  product_id: z.string().uuid('Invalid product').optional().nullable().or(z.literal('')).transform(v => v === '' ? null : v),
+  // item_name stores the PO line item description so items always display
+  // correctly even when no product is linked
+  item_name: z.string().max(500).optional().nullable(),
+  description: z.string().max(1000).optional().nullable(),
+  sku: z.string().max(100).optional().nullable(),
+  unit: z.string().max(50).optional().nullable(),
+  tax_percentage: z.coerce.number().min(0).max(100).default(0),
   ordered_quantity: z.coerce.number().min(0).default(0),
   received_quantity: z.coerce.number().min(0, 'Received quantity must be non-negative'),
+  accepted_quantity: z.coerce.number().min(0).optional().nullable(),
+  rejected_quantity: z.coerce.number().min(0).optional().nullable(),
+  damage_notes: z.string().max(500).optional().nullable(),
+  batch_number: z.string().max(100).optional().nullable(),
+  serial_numbers: z.string().max(500).optional().nullable(),
+  warehouse_location: z.string().max(200).optional().nullable(),
   unit_cost: z.coerce.number().min(0, 'Unit cost must be non-negative'),
   notes: z.string().max(500).optional().nullable(),
 })

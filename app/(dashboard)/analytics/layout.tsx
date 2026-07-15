@@ -1,7 +1,19 @@
+import { Suspense } from 'react'
 import { BarChart3 } from 'lucide-react'
+import { getUserRole } from '@/lib/supabase/get-auth'
 import { AnalyticsSubNav } from '@/components/analytics/analytics-sub-nav'
 
-export default function AnalyticsLayout({ children }: { children: React.ReactNode }) {
+// Inner async component so layout itself stays synchronous
+async function AnalyticsNav() {
+  const role = await getUserRole()
+  return <AnalyticsSubNav role={role} />
+}
+
+export default function AnalyticsLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
     <div className="min-h-full">
       <div className="mx-auto max-w-screen-2xl space-y-6 p-6">
@@ -16,10 +28,11 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
-        {/* Sub-navigation */}
-        <AnalyticsSubNav />
+        {/* Role-filtered sub-navigation — loaded async */}
+        <Suspense fallback={<div className="h-10 rounded-xl bg-[--color-background-muted] animate-pulse" />}>
+          <AnalyticsNav />
+        </Suspense>
 
-        {/* Page content */}
         {children}
       </div>
     </div>

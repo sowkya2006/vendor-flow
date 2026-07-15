@@ -113,11 +113,11 @@ export interface VendorPortalQuotation {
   rfq_id: string | null
   status: string
   valid_until: string | null
-  currency: string
   subtotal: number
   tax_amount: number
   discount_amount: number
-  total_amount: number
+  grand_total: number
+  total_amount: number  // alias kept for backward compat — equals grand_total
   notes: string | null
   created_at: string
   updated_at: string
@@ -127,13 +127,15 @@ export interface VendorPortalQuotation {
 
 export interface VendorPortalQuotationItem {
   id: string
-  description: string
+  item_name: string
+  description: string | null
   quantity: number
   unit: string | null
   unit_price: number
-  tax_percentage: number
+  tax_pct: number
+  tax_amount: number
   line_total: number
-  notes: string | null
+  remarks: string | null
 }
 
 export interface VendorPortalPO {
@@ -141,9 +143,7 @@ export interface VendorPortalPO {
   po_number: string
   status: string
   total_amount: number | null
-  currency: string
   due_date: string | null
-  expected_delivery_date: string | null
   notes: string | null
   created_at: string
   rfq?: { id: string; rfq_number: string } | null

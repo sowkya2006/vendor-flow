@@ -317,7 +317,8 @@ export async function submitApprovalRequest(
 
   await logAction(supabase, id, companyId, userId, 'submitted', 'draft', newStatus, null)
   await createNotification(supabase, id, companyId, firstStep?.approver_id, 'approval_requested',
-    'Approval Requested', `Your approval is required for: ${data.title}`)
+    'Approval Requested', `Your approval is required for: ${data.title}`,
+    `/approvals/${id}`)
 
   return data as ApprovalRequest
 }
@@ -360,14 +361,16 @@ export async function approveStep(
     const nextStep = updated.steps?.find((s) => s.status === 'pending')
     if (nextStep?.approver_id) {
       await createNotification(supabase, requestId, companyId, nextStep.approver_id, 'approval_requested',
-        'Your Approval Required', `Please review: ${updated.title}`)
+        'Your Approval Required', `Please review: ${updated.title}`,
+        `/approvals/${requestId}`)
     }
   }
 
   // Notify requester of final approval
   if (updated.status === 'approved' && updated.requested_by) {
     await createNotification(supabase, requestId, companyId, updated.requested_by, 'approved',
-      'Request Approved', `Your request "${updated.title}" has been approved.`)
+      'Request Approved', `Your request "${updated.title}" has been approved.`,
+      `/approvals/${requestId}`)
   }
 
   return updated
@@ -410,7 +413,8 @@ export async function rejectRequest(
 
   if (old.requested_by) {
     await createNotification(supabase, requestId, companyId, old.requested_by, 'rejected',
-      'Request Rejected', `Your request "${old.title}" was rejected. Reason: ${reason}`)
+      'Request Rejected', `Your request "${old.title}" was rejected. Reason: ${reason}`,
+      `/approvals/${requestId}`)
   }
 
   return data as ApprovalRequest
@@ -452,7 +456,8 @@ export async function returnRequest(
 
   if (old.requested_by) {
     await createNotification(supabase, requestId, companyId, old.requested_by, 'returned',
-      'Request Returned', `Your request "${old.title}" was returned for revision. Reason: ${reason}`)
+      'Request Returned', `Your request "${old.title}" was returned for revision. Reason: ${reason}`,
+      `/approvals/${requestId}`)
   }
 
   return data as ApprovalRequest
@@ -682,6 +687,7 @@ async function createNotification(
   type: string,
   title: string,
   body: string,
+  link?: string,
 ) {
   if (!recipientId) return
   await supabase.from('approval_notifications').insert({
@@ -691,6 +697,9 @@ async function createNotification(
     type,
     title,
     body,
+    link: link ?? `/approvals/${requestId}`,
+    entity_type: 'approval_request',
+    entity_id: requestId,
   })
 }
 

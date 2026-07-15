@@ -75,6 +75,18 @@ export async function createGrnAction(values: CreateGrnInput) {
   const user = await getUser()
   const companyId = await getCompanyId()
   const grn = await createGrn(companyId, user.id, parsed.data)
+
+  // Notify WM, PO, FM, Admin
+  const { notify } = await import('@/lib/notifications/engine')
+  await notify({
+    event: 'GRN_CREATED',
+    companyId,
+    triggeredBy: user.id,
+    entityId: grn.id,
+    entityRef: (grn as { grn_number?: string }).grn_number ?? grn.id,
+    entityType: 'grn',
+  })
+
   redirect(`/inventory/grn/${grn.id}`)
 }
 
@@ -82,8 +94,72 @@ export async function completeGrnAction(id: string) {
   const user = await getUser()
   const companyId = await getCompanyId()
   await updateGrnStatus(id, companyId, user.id, { status: 'completed' })
+
+  // Notify all relevant roles that GRN is completed
+  try {
+    const { notify } = await import('@/lib/notifications/engine')
+    await notify({
+      event: 'GRN_CREATED',
+      companyId,
+      triggeredBy: user.id,
+      entityId: id,
+      entityRef: id,
+      entityType: 'grn',
+    })
+  } catch { /* non-critical */ }
+
+  // Notify the vendor — their goods have been received, they can now invoice
+  try {
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = createAdminClient() as any
+    const { data: grn } = await db
+      .from('grn')
+      .select('grn_number, purchase_order_id, purchase_order:purchase_orders(vendor_id, po_number)')
+      .eq('id', id)
+      .maybeSingle()
+
+    const vendorId = (grn?.purchase_order as { vendor_id?: string } | null)?.vendor_id
+    const poNumber = (grn?.purchase_order as { po_number?: string } | null)?.po_number
+
+    if (vendorId) {
+      const { notifyVendor } = await import('@/lib/notifications/engine')
+      await notifyVendor(vendorId, {
+        type: 'general',
+        title: `Goods Received: ${grn.grn_number}`,
+        body: `Your goods delivery for ${poNumber ? `PO ${poNumber}` : 'your Purchase Order'} has been received and accepted. You can now create an invoice.`,
+        link: `/vendor/invoices/new`,
+        entityType: 'grn',
+        entityId: id,
+        companyId,
+      })
+    }
+  } catch { /* non-critical */ }
+
   revalidatePath(`/inventory/grn/${id}`)
   revalidatePath('/inventory')
+  revalidatePath('/inventory/grn')
+  revalidatePath('/analytics/inventory')
+  revalidatePath('/products')
+}
+
+/**
+ * Re-sync inventory for an already-completed GRN.
+ * Use this when a GRN was completed before the sync logic existed.
+ */
+export async function resyncGrnInventoryAction(id: string) {
+  const user = await getUser()
+  const companyId = await getCompanyId()
+
+  // Import the sync function directly
+  const { syncInventoryFromGRNPublic } = await import('@/lib/supabase/inventory')
+  await syncInventoryFromGRNPublic(id, companyId, user.id)
+
+  revalidatePath(`/inventory/grn/${id}`)
+  revalidatePath('/inventory')
+  revalidatePath('/inventory/grn')
+  revalidatePath('/analytics/inventory')
+  revalidatePath('/products')
 }
 
 export async function cancelGrnAction(id: string) {

@@ -53,7 +53,7 @@ export async function getPurchaseOrders(
 }
 
 /**
- * Single PO by ID with vendor and line items, scoped to a company.
+ * Single PO by ID with vendor, line items, and quotation provenance.
  */
 export async function getPurchaseOrderById(
   id: string,
@@ -64,7 +64,9 @@ export async function getPurchaseOrderById(
     .from(TABLE)
     .select(
       `*, vendor:vendors(id, name, email, status, category),
-       items:purchase_order_items(*)`,
+       items:purchase_order_items(*),
+       quotation:quotations(id, quotation_number, rfq_id, grand_total,
+         rfq:rfqs(id, rfq_number, title))`,
     )
     .eq('id', id)
     .eq('company_id', companyId)
@@ -78,7 +80,8 @@ export async function getPurchaseOrderById(
 }
 
 /**
- * Insert a new PO and its line items.
+ * Insert a new PO from an approved quotation.
+ * Validates that the quotation is approved and doesn't already have a PO.
  */
 export async function createPurchaseOrder(
   companyId: string,
@@ -87,8 +90,34 @@ export async function createPurchaseOrder(
 ): Promise<PurchaseOrder> {
   const supabase = await db()
 
-  // Coerce empty strings to null so FK columns don't receive ''
+  const quotationId = data.quotation_id && data.quotation_id !== '' ? data.quotation_id : null
   const rfqId = data.rfq_id && data.rfq_id !== '' ? data.rfq_id : null
+
+  // Validate quotation if provided
+  if (quotationId) {
+    const { data: quotation } = await supabase
+      .from('quotations')
+      .select('id, status, vendor_id')
+      .eq('id', quotationId)
+      .eq('company_id', companyId)
+      .single()
+
+    if (!quotation) throw new Error('Quotation not found')
+    if (quotation.status !== 'approved') {
+      throw new Error('Purchase Order can only be created from an approved quotation')
+    }
+
+    // Check no existing PO for this quotation
+    const { data: existingPO } = await supabase
+      .from(TABLE)
+      .select('id')
+      .eq('quotation_id', quotationId)
+      .maybeSingle()
+
+    if (existingPO) {
+      throw new Error('A Purchase Order already exists for this quotation')
+    }
+  }
 
   const { data: po, error } = await supabase
     .from(TABLE)
@@ -97,12 +126,14 @@ export async function createPurchaseOrder(
       created_by: createdBy,
       vendor_id: data.vendor_id,
       rfq_id: rfqId,
+      quotation_id: quotationId,
       due_date: data.due_date && data.due_date !== '' ? data.due_date : null,
-      shipping_address: data.shipping_address && data.shipping_address !== '' ? data.shipping_address : null,
-      billing_address: data.billing_address && data.billing_address !== '' ? data.billing_address : null,
-      payment_terms: data.payment_terms && data.payment_terms !== '' ? data.payment_terms : null,
-      notes: data.notes && data.notes !== '' ? data.notes : null,
+      shipping_address: data.shipping_address || null,
+      billing_address: data.billing_address || null,
+      payment_terms: data.payment_terms || null,
+      notes: data.notes || null,
       status: 'draft',
+      vendor_acceptance: 'pending',
     })
     .select()
     .single()
@@ -110,7 +141,6 @@ export async function createPurchaseOrder(
   if (error) throw error
 
   if (data.items && data.items.length > 0) {
-    // Do NOT include total_price — it is a GENERATED ALWAYS column in Postgres
     const items = data.items.map((item) => ({
       purchase_order_id: po.id,
       description: item.description,
@@ -122,6 +152,14 @@ export async function createPurchaseOrder(
       .from('purchase_order_items')
       .insert(items)
     if (itemsError) throw itemsError
+  }
+
+  // Mark quotation as "po_created" so it disappears from the "Create PO" list
+  if (quotationId) {
+    await supabase
+      .from('quotations')
+      .update({ status: 'awarded', updated_at: new Date().toISOString() })
+      .eq('id', quotationId)
   }
 
   return po as PurchaseOrder

@@ -3,59 +3,43 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  TrendingUp,
-  TrendingDown,
-  Users,
-  FileText,
-  ShoppingCart,
-  Clock,
-  DollarSign,
-  AlertTriangle,
+  TrendingUp, TrendingDown,
+  Users, FileText, ShoppingCart, Clock,
+  DollarSign, AlertTriangle, Package, CreditCard,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const iconMap: Record<string, LucideIcon> = {
-  Users,
-  FileText,
-  ShoppingCart,
-  Clock,
-  DollarSign,
-  AlertTriangle,
+  Users, FileText, ShoppingCart, Clock,
+  DollarSign, AlertTriangle, Package, CreditCard,
 }
 
-const colorMap: Record<string, { bg: string; text: string; ring: string; icon: string }> = {
-  blue:   { bg: 'bg-blue-50 dark:bg-blue-950/40',   text: 'text-blue-600 dark:text-blue-400',   ring: 'ring-blue-100 dark:ring-blue-900',   icon: 'text-blue-500' },
-  purple: { bg: 'bg-purple-50 dark:bg-purple-950/40', text: 'text-purple-600 dark:text-purple-400', ring: 'ring-purple-100 dark:ring-purple-900', icon: 'text-purple-500' },
-  green:  { bg: 'bg-green-50 dark:bg-green-950/40',  text: 'text-green-600 dark:text-green-400',  ring: 'ring-green-100 dark:ring-green-900',  icon: 'text-green-500' },
-  orange: { bg: 'bg-orange-50 dark:bg-orange-950/40', text: 'text-orange-600 dark:text-orange-400', ring: 'ring-orange-100 dark:ring-orange-900', icon: 'text-orange-500' },
-  cyan:   { bg: 'bg-cyan-50 dark:bg-cyan-950/40',    text: 'text-cyan-600 dark:text-cyan-400',    ring: 'ring-cyan-100 dark:ring-cyan-900',    icon: 'text-cyan-500' },
-  red:    { bg: 'bg-red-50 dark:bg-red-950/40',      text: 'text-red-600 dark:text-red-400',      ring: 'ring-red-100 dark:ring-red-900',      icon: 'text-red-500' },
+const colorMap: Record<string, { stripe: string; bg: string; iconColor: string }> = {
+  blue:   { stripe: 'bg-blue-500',    bg: 'bg-blue-50 dark:bg-blue-950/40',    iconColor: 'text-blue-600 dark:text-blue-400'   },
+  purple: { stripe: 'bg-violet-500',  bg: 'bg-violet-50 dark:bg-violet-950/40', iconColor: 'text-violet-600 dark:text-violet-400' },
+  green:  { stripe: 'bg-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/40', iconColor: 'text-emerald-600 dark:text-emerald-400' },
+  orange: { stripe: 'bg-orange-500',  bg: 'bg-orange-50 dark:bg-orange-950/40', iconColor: 'text-orange-600 dark:text-orange-400' },
+  cyan:   { stripe: 'bg-cyan-500',    bg: 'bg-cyan-50 dark:bg-cyan-950/40',    iconColor: 'text-cyan-600 dark:text-cyan-400'   },
+  red:    { stripe: 'bg-red-500',     bg: 'bg-red-50 dark:bg-red-950/40',      iconColor: 'text-red-600 dark:text-red-400'     },
 }
 
-function useAnimatedCounter(target: number, duration = 1500) {
+function useAnimatedCounter(target: number, duration = 1100) {
   const [count, setCount] = useState(0)
   const rafRef = useRef<number | null>(null)
-  const startTimeRef = useRef<number | null>(null)
-
+  const startRef = useRef<number | null>(null)
   useEffect(() => {
-    const animate = (timestamp: number) => {
-      if (startTimeRef.current === null) startTimeRef.current = timestamp
-      const elapsed = timestamp - startTimeRef.current
-      const progress = Math.min(elapsed / duration, 1)
-      // Ease out cubic
-      const eased = 1 - Math.pow(1 - progress, 3)
+    startRef.current = null
+    const animate = (ts: number) => {
+      if (!startRef.current) startRef.current = ts
+      const p = Math.min((ts - startRef.current) / duration, 1)
+      const eased = 1 - Math.pow(1 - p, 3)
       setCount(Math.round(eased * target))
-      if (progress < 1) {
-        rafRef.current = requestAnimationFrame(animate)
-      }
+      if (p < 1) rafRef.current = requestAnimationFrame(animate)
     }
     rafRef.current = requestAnimationFrame(animate)
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-    }
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
   }, [target, duration])
-
   return count
 }
 
@@ -72,77 +56,55 @@ export interface KpiCardProps {
   index?: number
 }
 
-export function KpiCard({
-  title,
-  value,
-  change,
-  trend,
-  icon,
-  color,
-  description,
-  isCurrency,
-  index = 0,
-}: KpiCardProps) {
-  const animatedValue = useAnimatedCounter(value, 1200 + index * 100)
+export function KpiCard({ title, value, change, trend, icon, color, description, isCurrency, index = 0 }: KpiCardProps) {
+  const animated = useAnimatedCounter(value, 1000 + index * 70)
   const colors = colorMap[color] ?? colorMap.blue
   const Icon = iconMap[icon] ?? Users
-  const isPositive = trend === 'up'
+  const isUp = trend === 'up'
 
   const displayValue = isCurrency
-    ? `$${(animatedValue / 1000).toFixed(0)}K`
-    : animatedValue.toLocaleString()
+    ? `₹${animated >= 100000 ? `${(animated / 100000).toFixed(1)}L` : animated >= 1000 ? `${(animated / 1000).toFixed(0)}K` : animated}`
+    : animated.toLocaleString('en-IN')
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.08, ease: 'easeOut' }}
-      whileHover={{ y: -2, transition: { duration: 0.2 } }}
-      className="group relative overflow-hidden rounded-xl border border-[--color-border] bg-[--color-card] p-5 shadow-[--shadow-sm] transition-shadow hover:shadow-[--shadow-md]"
+      transition={{ duration: 0.32, delay: index * 0.06, ease: 'easeOut' }}
+      whileHover={{ y: -2, transition: { duration: 0.16 } }}
+      className="group relative overflow-hidden rounded-xl border border-[--color-border] bg-[--color-card] shadow-[var(--shadow-sm)] transition-shadow hover:shadow-[var(--shadow-md)]"
     >
-      {/* Subtle gradient accent */}
-      <div
-        className={cn(
-          'absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-10 transition-opacity group-hover:opacity-20',
-          colors.bg
-        )}
-      />
+      {/* Left accent stripe */}
+      <div className={cn('absolute inset-y-0 left-0 w-[3px]', colors.stripe)} />
 
-      <div className="relative flex items-start justify-between">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wider text-[--color-foreground-muted]">
-            {title}
-          </p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-[--color-foreground]">
-            {displayValue}
-          </p>
-          <p className="mt-0.5 text-xs text-[--color-foreground-subtle] truncate">{description}</p>
+      <div className="pl-5 pr-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-[--color-foreground-muted]">
+              {title}
+            </p>
+            <p className="mt-2 text-[28px] font-bold tabular-nums leading-none tracking-tight text-[--color-foreground]">
+              {displayValue}
+            </p>
+            <p className="mt-1.5 text-xs text-[--color-foreground-subtle] truncate">{description}</p>
+          </div>
+          <div className={cn('shrink-0 rounded-xl p-2.5 mt-0.5', colors.bg)}>
+            <Icon className={cn('h-5 w-5', colors.iconColor)} />
+          </div>
         </div>
 
-        {/* Icon badge */}
-        <div className={cn('ml-3 shrink-0 rounded-lg p-2.5 ring-1', colors.bg, colors.ring)}>
-          <Icon className={cn('h-4 w-4', colors.icon)} />
+        <div className="mt-3 flex items-center gap-2">
+          <span className={cn(
+            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+            isUp
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
+              : 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-400',
+          )}>
+            {isUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            {isUp ? '+' : ''}{change}%
+          </span>
+          <span className="text-[11px] text-[--color-foreground-subtle]">vs last month</span>
         </div>
-      </div>
-
-      {/* Trend badge */}
-      <div className="mt-3 flex items-center gap-1.5">
-        <div
-          className={cn(
-            'flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold',
-            isPositive
-              ? 'bg-green-100 text-green-700 dark:bg-green-950/60 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400'
-          )}
-        >
-          {isPositive ? (
-            <TrendingUp className="h-3 w-3" />
-          ) : (
-            <TrendingDown className="h-3 w-3" />
-          )}
-          <span>{isPositive ? '+' : ''}{change}%</span>
-        </div>
-        <span className="text-xs text-[--color-foreground-subtle]">vs last month</span>
       </div>
     </motion.div>
   )

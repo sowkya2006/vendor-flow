@@ -80,7 +80,7 @@ export function InviteEmployeeButton({ roles }: { roles: PortalRole[] }) {
               <SelectTrigger>
                 <SelectValue placeholder="Select role…" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper">
                 {roles.map((r) => (
                   <SelectItem key={r.slug} value={r.slug}>{r.name}</SelectItem>
                 ))}

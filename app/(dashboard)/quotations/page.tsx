@@ -2,6 +2,8 @@ import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { FileSearch } from 'lucide-react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
+import { canCreateQuotation } from '@/config/nav-roles'
 import { getQuotations, getQuotationStats } from '@/lib/supabase/quotations'
 import { QuotationList } from '@/components/quotations/quotation-list'
 import { PageContainer } from '@/components/shared/page-container'
@@ -83,15 +85,9 @@ interface PageProps {
 }
 
 async function QuotationListServer({
-  companyId,
-  search,
-  status,
-  page,
+  companyId, search, status, page, canCreate,
 }: {
-  companyId: string
-  search: string
-  status: string
-  page: number
+  companyId: string; search: string; status: string; page: number; canCreate: boolean
 }) {
   const result = await getQuotations(companyId, {
     search: search || undefined,
@@ -106,6 +102,7 @@ async function QuotationListServer({
       total={result.total}
       hasNextPage={result.hasNextPage}
       page={result.page}
+      canCreate={canCreate}
     />
   )
 }
@@ -118,7 +115,9 @@ export default async function QuotationsPage({ searchParams }: PageProps) {
   const status = params.status ?? ''
   const page = Math.max(1, parseInt(params.page ?? '1', 10))
 
-  const companyId = await getCompanyId()
+  const [companyId, role] = await Promise.all([getCompanyId(), getUserRole()])
+  // Quotations NEVER created in company portal — always false
+  const canCreate = canCreateQuotation(role)
 
   return (
     <PageContainer>
@@ -148,6 +147,7 @@ export default async function QuotationsPage({ searchParams }: PageProps) {
             search={search}
             status={status}
             page={page}
+            canCreate={canCreate}
           />
         </Suspense>
       </div>
