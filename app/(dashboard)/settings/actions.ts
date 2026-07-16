@@ -46,8 +46,24 @@ export async function inviteEmployeeAction(input: unknown) {
     designation: parsed.data.designation ?? undefined,
   })
 
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  // Resolve the app URL dynamically — works in both dev and production.
+  // Priority order:
+  //   1. NEXT_PUBLIC_APP_URL           — explicitly set (most reliable)
+  //   2. VERCEL_PROJECT_PRODUCTION_URL — set automatically by Vercel in production
+  //   3. VERCEL_URL                    — set automatically by Vercel for preview deploys
+  //   4. localhost:3000                — local development fallback
+  const appUrl = (() => {
+    if (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')) {
+      return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')
+    }
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+      return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    }
+    if (process.env.VERCEL_URL) {
+      return `https://${process.env.VERCEL_URL}`
+    }
+    return process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  })()
 
   try {
     console.log('===================================')
@@ -65,14 +81,16 @@ export async function inviteEmployeeAction(input: unknown) {
         parsed.data.email,
         {
           data: {
-            full_name: parsed.data.full_name ?? '',
+            full_name:    parsed.data.full_name ?? '',
             invite_token: invitation.token,
-            company_id: companyId,
-            role_slug: parsed.data.role_slug,
+            company_id:   companyId,
+            role_slug:    parsed.data.role_slug,
           },
-          // Use /auth/confirm — Supabase admin invite uses implicit flow (hash fragment)
-          // /auth/callback is server-side and cannot read hash fragments
-          redirectTo: `${appUrl}/auth/confirm`,
+          // Use /auth/callback — Supabase inviteUserByEmail uses PKCE flow
+          // which sends a `code` query parameter to the server-side route handler.
+          // /auth/confirm is client-side and cannot receive PKCE codes.
+          // Pass invite_token so the callback can apply the invitation.
+          redirectTo: `${appUrl}/auth/callback?type=invite&invite_token=${invitation.token}`,
         }
       )
 

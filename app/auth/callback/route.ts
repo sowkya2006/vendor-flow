@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 
 // Portal cookie — must match proxy.ts constants exactly
@@ -87,7 +88,11 @@ async function applyInvitation(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const { data: invitation } = await supabase
+    // Use admin client to bypass RLS — employee has no company_id yet
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adminDb = createAdminClient() as any
+
+    const { data: invitation } = await adminDb
       .from('employee_invitations')
       .select('*')
       .eq('token', inviteToken)
@@ -95,8 +100,11 @@ async function applyInvitation(
       .limit(1)
       .maybeSingle()
 
-    if (!invitation) return
-    await linkUserToInvitation(supabase, user, invitation)
+    if (!invitation) {
+      console.warn('[auth/callback] No pending invitation found for token:', inviteToken)
+      return
+    }
+    await linkUserToInvitation(adminDb, user, invitation)
   } catch (e) {
     console.error('[auth/callback] applyInvitation error:', e)
   }
@@ -111,7 +119,11 @@ async function applyInvitationByEmail(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user?.email) return
 
-    const { data: invitation } = await supabase
+    // Use admin client to bypass RLS
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adminDb = createAdminClient() as any
+
+    const { data: invitation } = await adminDb
       .from('employee_invitations')
       .select('*')
       .eq('email', user.email)
@@ -121,16 +133,16 @@ async function applyInvitationByEmail(
       .maybeSingle()
 
     if (!invitation) return
-    await linkUserToInvitation(supabase, user, invitation)
+    await linkUserToInvitation(adminDb, user, invitation)
   } catch (e) {
     console.error('[auth/callback] applyInvitationByEmail error:', e)
   }
 }
 
-/** Link authenticated user to their invitation record */
+/** Link authenticated user to their invitation record using admin client */
 async function linkUserToInvitation(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
+  adminDb: any,
   user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
   invitation: {
     id: string; company_id: string; role_slug: string
@@ -138,30 +150,37 @@ async function linkUserToInvitation(
     token: string
   },
 ) {
-  const { data: existingRow } = await supabase
-    .from('users').select('id').eq('id', user.id).maybeSingle()
-
   const userData = {
-    company_id: invitation.company_id,
-    role: invitation.role_slug,
-    department: invitation.department,
-    designation: invitation.designation,
-    full_name: invitation.full_name ?? (user.user_metadata?.full_name as string) ?? null,
-    email: user.email,
-    status: 'active',
-    updated_at: new Date().toISOString(),
+    id:          user.id,
+    company_id:  invitation.company_id,
+    role:        invitation.role_slug,
+    department:  invitation.department ?? null,
+    designation: invitation.designation ?? null,
+    full_name:   invitation.full_name
+                  ?? (user.user_metadata?.full_name as string | undefined)
+                  ?? user.email?.split('@')[0]
+                  ?? null,
+    email:       user.email,
+    status:      'active',
+    portal_type: 'company',
+    updated_at:  new Date().toISOString(),
   }
 
-  if (existingRow) {
-    await supabase.from('users').update(userData).eq('id', user.id)
-  } else {
-    await supabase.from('users').insert({ id: user.id, ...userData })
+  const { error } = await adminDb
+    .from('users')
+    .upsert(userData, { onConflict: 'id' })
+
+  if (error) {
+    console.error('[auth/callback] linkUserToInvitation upsert error:', error)
+    return
   }
 
-  await supabase
+  await adminDb
     .from('employee_invitations')
     .update({ accepted_at: new Date().toISOString() })
     .eq('id', invitation.id)
+
+  console.log(`[auth/callback] Linked ${user.email} → company ${invitation.company_id} as ${invitation.role_slug}`)
 }
 
 async function redirectAfterAuth(
