@@ -11,28 +11,30 @@ export default async function WorkspaceSetupPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/company/login')
 
+  // Use admin client to bypass RLS — new admins may not yet have
+  // their RLS policies fully evaluated for their own row
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: userRow } = await (supabase as any)
+  const adminDb = (await import('@/lib/supabase/admin')).createAdminClient() as any
+
+  const { data: userRow } = await adminDb
     .from('users')
     .select('company_id, role')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
 
   const companyId = (userRow as { company_id: string; role: string } | null)?.company_id
   const role      = (userRow as { company_id: string; role: string } | null)?.role ?? 'viewer'
 
   // Only admins can set up the workspace.
-  // Employees invited by the admin should never land here.
   const isAdmin = role === 'administrator' || role === 'admin'
   if (!isAdmin) redirect('/dashboard')
 
   if (companyId) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: company } = await (supabase as any)
+    const { data: company } = await adminDb
       .from('companies')
       .select('setup_complete')
       .eq('id', companyId)
-      .single()
+      .maybeSingle()
     if ((company as { setup_complete: boolean } | null)?.setup_complete) {
       redirect('/dashboard')
     }

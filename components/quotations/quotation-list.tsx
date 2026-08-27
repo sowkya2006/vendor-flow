@@ -195,10 +195,12 @@ export function QuotationList({ quotations, total, hasNextPage, page, canCreate 
           description={
             hasFilters
               ? 'Try adjusting your search or filters.'
-              : 'Create your first quotation or wait for vendors to respond to RFQs.'
+              : canCreate
+                ? 'Create your first quotation or wait for vendors to respond to RFQs.'
+                : 'No quotations to review yet. They will appear here once vendors respond to RFQs.'
           }
           action={
-            !hasFilters ? (
+            !hasFilters && canCreate ? (
               <Button asChild>
                 <Link href="/quotations/new">
                   <Plus className="h-4 w-4" />

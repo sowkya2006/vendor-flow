@@ -68,18 +68,31 @@ export async function submitInvoiceAction(id: string) {
   const user = await getUser()
   const companyId = await getCompanyId()
   await updateInvoiceStatus(id, companyId, 'submitted')
-  // Notify finance managers that a new invoice needs review
+
+  // Notify finance_manager and administrator via the engine (in-app + email)
   try {
-    const { notifyAllWithRole } = await import('@/lib/supabase/notifications')
-    await notifyAllWithRole(companyId, 'finance_manager', {
-      type: 'invoice_submitted',
-      title: 'Invoice submitted for review',
-      message: `An invoice has been submitted and is awaiting your approval.`,
-      link: `/payments/invoices/${id}`,
-      entityType: 'invoice',
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const admin = createAdminClient() as any
+    const { data: invoice } = await admin
+      .from('invoices')
+      .select('invoice_number, vendor_id')
+      .eq('id', id)
+      .maybeSingle()
+    const invRef = (invoice as { invoice_number?: string } | null)?.invoice_number ?? id
+
+    const { notify } = await import('@/lib/notifications/engine')
+    await notify({
+      event: 'INVOICE_SUBMITTED',
+      companyId,
+      triggeredBy: user.id,
       entityId: id,
+      entityRef: invRef,
+      entityType: 'invoice',
+      link: `/payments/invoices/${id}`,
     })
   } catch { /* non-critical */ }
+
   revalidatePath(`/payments/invoices/${id}`)
   revalidatePath('/payments')
 }

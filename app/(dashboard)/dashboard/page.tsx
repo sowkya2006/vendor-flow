@@ -17,12 +17,12 @@ import { GlassActivityFeed } from '@/components/dashboard/glass-activity-feed'
 import { GlassRecentTable } from '@/components/dashboard/glass-recent-table'
 import { ProcurementWorkflow } from '@/components/dashboard/procurement-workflow'
 import {
-  GlassSpendChart,
-  GlassProcurementDonut,
-  GlassVendorPerformance,
-  GlassInventoryHealth,
-} from '@/components/dashboard/glass-charts'
-import { Skeleton } from '@/components/shared/loading-states'
+  SpendChartWrapper,
+  ProcurementDonutWrapper,
+  VendorPerformanceWrapper,
+  InventoryHealthWrapper,
+} from '@/components/dashboard/glass-chart-wrappers'
+
 
 export const metadata: Metadata = { title: 'Dashboard — VendorFlow' }
 
@@ -61,20 +61,20 @@ function AdminDashboard() {
             {/* Spend + Donut row */}
             <div className="grid gap-5 lg:grid-cols-2">
               <Suspense fallback={<GlassSkeleton h="h-64" />}>
-                <GlassSpendChart />
+                <SpendChartWrapper />
               </Suspense>
               <Suspense fallback={<GlassSkeleton h="h-64" />}>
-                <GlassProcurementDonut />
+                <ProcurementDonutWrapper />
               </Suspense>
             </div>
 
             {/* Vendor perf + Inventory row */}
             <div className="grid gap-5 lg:grid-cols-2">
               <Suspense fallback={<GlassSkeleton h="h-56" />}>
-                <GlassVendorPerformance />
+                <VendorPerformanceWrapper />
               </Suspense>
               <Suspense fallback={<GlassSkeleton h="h-56" />}>
-                <GlassInventoryHealth />
+                <InventoryHealthWrapper />
               </Suspense>
             </div>
           </div>

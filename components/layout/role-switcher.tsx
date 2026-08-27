@@ -1,7 +1,7 @@
 'use client'
 
 import { useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { Eye, ChevronDown } from 'lucide-react'
 import {
   DropdownMenu,
@@ -32,6 +32,7 @@ interface RoleSwitcherProps {
 export function RoleSwitcher({ currentPreviewRole, realRole }: RoleSwitcherProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+  const pathname = usePathname()
 
   // Only admins can use this
   if (realRole !== 'administrator' && realRole !== 'admin') return null
@@ -48,13 +49,14 @@ export function RoleSwitcher({ currentPreviewRole, realRole }: RoleSwitcherProps
           const result = await setPreviewRoleAction(slug)
           if (!result.ok) {
             console.warn('[RoleSwitcher] switch failed:', result.error)
-            // If we're not actually an admin (e.g. session changed), clear preview
             await clearPreviewRoleAction()
           }
         }
+        // router.refresh() re-renders server components without a full page reload.
+        // The session cookies remain intact. window.location.reload() was causing
+        // the middleware to lose the session context.
         router.refresh()
       } catch (err) {
-        // Network / unexpected error — clear and refresh gracefully
         console.warn('[RoleSwitcher] unexpected error:', err)
         try { await clearPreviewRoleAction() } catch { /* ignore */ }
         router.refresh()

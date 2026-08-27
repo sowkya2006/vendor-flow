@@ -73,7 +73,40 @@ export async function registerVendorBeforeVerificationAction(input: unknown) {
   const parsed = registerBeforeSchema.safeParse(input)
   if (!parsed.success) throw new Error('Invalid data: ' + JSON.stringify(parsed.error.flatten()))
   const { userId, ...profileData } = parsed.data
-  await registerVendorCompany(userId, profileData, { useServiceRole: true })
+
+  try {
+    await registerVendorCompany(userId, profileData, { useServiceRole: true })
+  } catch (err) {
+    // Always extract a string message
+    let msg = 'Unknown error'
+    if (err instanceof Error) {
+      msg = err.message
+    } else if (typeof err === 'object' && err !== null) {
+      const e = err as Record<string, unknown>
+      msg = (e.message as string) ?? (e.details as string) ?? (e.hint as string) ?? JSON.stringify(err)
+    } else {
+      msg = String(err)
+    }
+
+    console.error('[registerVendorBeforeVerificationAction] error:', msg, err)
+
+    if (msg.includes('23503') || msg.includes('foreign key') || msg.includes('violates foreign key')) {
+      // FK violation — auth user not yet persisted. Retry once after a delay.
+      console.log('[registerVendorBeforeVerificationAction] FK violation, retrying in 2s...')
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      try {
+        await registerVendorCompany(userId, profileData, { useServiceRole: true })
+        return // Retry succeeded
+      } catch (retryErr) {
+        const retryMsg = retryErr instanceof Error ? retryErr.message : JSON.stringify(retryErr)
+        throw new Error('Account creation failed — please try again in a moment. (' + retryMsg + ')')
+      }
+    }
+    if (msg.includes('23505') || msg.includes('unique') || msg.includes('already exists')) {
+      return // Already saved — safe to continue
+    }
+    throw new Error('Failed to save vendor profile: ' + msg)
+  }
 }
 
 export async function updateVendorCompanyAction(input: unknown) {

@@ -23,23 +23,26 @@ export async function setupWorkspaceAction(input: unknown) {
   }
   const values = parsed.data
   const user = await getUser()
-  const supabase = await createClient()
 
-  // Get or create company for this user
+  // Use admin client to bypass RLS for workspace setup
+  // New admins may not yet have RLS policies fully evaluated
+  const { createAdminClient } = await import('@/lib/supabase/admin')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: userRow } = await (supabase as any)
+  const adminDb = createAdminClient() as any
+
+  // Get company for this user
+  const { data: userRow } = await adminDb
     .from('users')
     .select('company_id')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
 
   const companyId = (userRow as { company_id: string } | null)?.company_id
 
   if (!companyId) throw new Error('No company linked to this user')
 
-  // Update company record
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  // Update company record with all details
+  const { error } = await adminDb
     .from('companies')
     .update({
       name: values.company_name,
@@ -57,11 +60,12 @@ export async function setupWorkspaceAction(input: unknown) {
   if (error) throw new Error('Failed to update workspace: ' + error.message)
 
   // Seed system roles for the company (ignore errors — function is idempotent)
-  await (supabase as any).rpc('seed_system_roles', { p_company_id: companyId })
-
-  // Ensure the current user is set to administrator role in users table
+  const supabase = await createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any)
+  await (supabase as any).rpc('seed_system_roles', { p_company_id: companyId }).catch(() => {})
+
+  // Ensure the current user is set to administrator
+  await adminDb
     .from('users')
     .update({ role: 'administrator', status: 'active' })
     .eq('id', user.id)

@@ -30,12 +30,9 @@ export function LoginForm() {
     try {
       const supabase = createClient()
 
-      // 1. Sign out any existing session (vendor or otherwise)
-      await supabase.auth.signOut()
-
-      // 2. Sign in with company credentials
+      // Sign in
       const { error } = await supabase.auth.signInWithPassword({
-        email:    values.email,
+        email: values.email,
         password: values.password,
       })
 
@@ -44,37 +41,25 @@ export function LoginForm() {
         return
       }
 
-      // 3. Verify this is actually a company account
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { toast.error('Sign in failed. Please try again.'); return }
+      // Set the httpOnly vf_portal=company cookie via server API
+      // This is the most reliable way — no JS cookie races
+      const portalRes = await fetch('/api/auth/set-company-portal', { method: 'POST' })
+      const portalData = await portalRes.json()
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = supabase as any
-      const { data: userRow } = await db
-        .from('users')
-        .select('company_id')
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (!userRow?.company_id) {
-        // Not a company account — sign out and show error
+      if (!portalRes.ok) {
+        // Not a company account — sign out
         await supabase.auth.signOut()
-        toast.error('This email is not registered as a company account. Please use the Vendor Portal.')
+        toast.error(portalData.error === 'Not a company account'
+          ? 'This email is not registered as a company account. Please use the Vendor Portal.'
+          : 'Sign in failed. Please try again.')
         return
       }
 
-      // 4. Set the portal cookie — tells the middleware this is a company session
-      // This cookie is the primary routing signal. It persists for 7 days.
-      document.cookie = 'vf_portal=company; path=/; max-age=604800; SameSite=Lax'
-      // Also delete any stale vf_ctx
-      document.cookie = 'vf_ctx=; path=/; max-age=0'
-
       toast.success('Welcome back!')
-
-      // 5. Hard redirect — middleware will see vf_portal=company and allow through
-      const dest = (!redirectTo || redirectTo.startsWith('/vendor'))
-        ? '/dashboard'
-        : redirectTo
+      // Redirect to workspace setup if setup not complete, else dashboard
+      const dest = portalData.setupComplete === false
+        ? '/workspace/setup'
+        : ((!redirectTo || redirectTo.startsWith('/vendor')) ? '/dashboard' : redirectTo)
       window.location.href = dest
 
     } catch {
@@ -100,9 +85,7 @@ export function LoginForm() {
             {...register('email')}
           />
         </div>
-        {errors.email && (
-          <p className="text-xs text-[--color-error]" role="alert">{errors.email.message}</p>
-        )}
+        {errors.email && <p className="text-xs text-[--color-error]">{errors.email.message}</p>}
       </div>
 
       <div className="space-y-1.5">
@@ -110,7 +93,7 @@ export function LoginForm() {
           <label htmlFor="login-password" className="block text-sm font-medium text-[--color-foreground]">
             Password
           </label>
-          <Link href="/forgot-password" className="text-xs text-[--color-primary] hover:underline outline-none">
+          <Link href="/forgot-password" className="text-xs text-[--color-primary] hover:underline">
             Forgot password?
           </Link>
         </div>
@@ -125,32 +108,21 @@ export function LoginForm() {
             className="pl-10 pr-10"
             {...register('password')}
           />
-          <button
-            type="button"
-            onClick={() => setShowPw(v => !v)}
-            aria-label={showPw ? 'Hide password' : 'Show password'}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[--color-foreground-subtle] hover:text-[--color-foreground-muted]"
-          >
+          <button type="button" onClick={() => setShowPw(v => !v)} aria-label={showPw ? 'Hide' : 'Show'}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[--color-foreground-subtle]">
             {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
         </div>
-        {errors.password && (
-          <p className="text-xs text-[--color-error]" role="alert">{errors.password.message}</p>
-        )}
+        {errors.password && <p className="text-xs text-[--color-error]">{errors.password.message}</p>}
       </div>
 
       <Button type="submit" size="xl" disabled={isSubmitting} className="w-full">
-        {isSubmitting
-          ? <><Loader2 className="size-4 animate-spin" />Signing in…</>
-          : 'Sign in'
-        }
+        {isSubmitting ? <><Loader2 className="size-4 animate-spin" />Signing in…</> : 'Sign in'}
       </Button>
 
       <p className="text-center text-sm text-[--color-foreground-muted]">
         Don&apos;t have an account?{' '}
-        <Link href="/signup" className="text-[--color-primary] font-medium hover:underline">
-          Create account
-        </Link>
+        <Link href="/signup" className="text-[--color-primary] font-medium hover:underline">Create account</Link>
       </p>
     </form>
   )

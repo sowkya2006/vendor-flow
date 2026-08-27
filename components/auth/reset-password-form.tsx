@@ -32,6 +32,11 @@ export function ResetPasswordForm({ isInvited = false }: { isInvited?: boolean }
   const [showPw, setShowPw] = useState(false)
   const [showCp, setShowCp] = useState(false)
 
+  // Get invite_token from URL if present
+  const inviteToken = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('invite_token')
+    : null
+
   const {
     register,
     handleSubmit,
@@ -44,13 +49,37 @@ export function ResetPasswordForm({ isInvited = false }: { isInvited?: boolean }
       toast.error(error.message)
       return
     }
-    toast.success(isInvited ? 'Password set! Welcome to VendorFlow.' : 'Password updated successfully')
-    // Hard redirect so the server session cookie is re-sent to the middleware.
-    // The proxy will check vf_portal cookie (set during invite confirmation)
-    // and route to the correct dashboard.
-    // For invited employees: vf_portal=company was set in /auth/confirm,
-    // so they go to /dashboard — middleware skips workspace-setup because
-    // their role is not administrator.
+
+    if (isInvited) {
+      // Apply invitation to link employee to company
+      // The invite_token is passed via URL from magic-callback
+      if (inviteToken) {
+        try {
+          const res = await fetch(`/api/auth/apply-invitation?token=${encodeURIComponent(inviteToken)}`, {
+            method: 'POST',
+          })
+          if (!res.ok) {
+            const d = await res.json()
+            console.error('[reset-password] apply invitation failed:', d.error)
+          }
+        } catch (e) {
+          console.error('[reset-password] apply invitation error:', e)
+        }
+      }
+      toast.success('Password set! Welcome to VendorFlow.')
+    } else {
+      toast.success('Password updated successfully')
+    }
+
+    // Set company portal cookie and redirect to dashboard
+    try {
+      let portalRes = await fetch('/api/auth/set-company-portal', { method: 'POST' })
+      if (!portalRes.ok) {
+        // Brief wait then retry — DB trigger may not have fired yet
+        await new Promise(r => setTimeout(r, 800))
+        portalRes = await fetch('/api/auth/set-company-portal', { method: 'POST' })
+      }
+    } catch { /* non-critical */ }
     window.location.href = '/dashboard'
   }
 

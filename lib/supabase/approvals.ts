@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type {
   ApprovalRequest,
   ApprovalRequestSummary,
@@ -316,9 +317,79 @@ export async function submitApprovalRequest(
   if (error) throw error
 
   await logAction(supabase, id, companyId, userId, 'submitted', 'draft', newStatus, null)
-  await createNotification(supabase, id, companyId, firstStep?.approver_id, 'approval_requested',
-    'Approval Requested', `Your approval is required for: ${data.title}`,
-    `/approvals/${id}`)
+
+  // Notify the next approver (specific user if assigned, else all users with that role)
+  // + notify the admin for oversight
+  // + send email to the notified parties
+  try {
+    const adminDb = createAdminClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    // Determine the first step's role
+    const stepRole = firstStep?.role_required ?? 'procurement_manager'
+    const approverRoles = new Set<string>(['administrator', stepRole])
+
+    // Fetch all active users with those roles
+    const { data: roleUsers } = await adminDb
+      .from('users')
+      .select('id, email, full_name, role')
+      .eq('company_id', companyId)
+      .in('role', Array.from(approverRoles))
+      .eq('status', 'active')
+
+    const recipients: { id: string; email: string | null; full_name: string | null }[] = roleUsers ?? []
+
+    // If a specific approver is assigned for this step, ensure they're included
+    if (firstStep?.approver_id) {
+      const already = recipients.some((r) => r.id === firstStep.approver_id)
+      if (!already) {
+        const { data: approver } = await adminDb
+          .from('users')
+          .select('id, email, full_name')
+          .eq('id', firstStep.approver_id)
+          .maybeSingle()
+        if (approver) recipients.push(approver as { id: string; email: string | null; full_name: string | null })
+      }
+    }
+
+    if (recipients.length > 0) {
+      const title  = `Approval Required: ${data.title}`
+      const body   = `A new approval request "${data.title}" has been submitted and requires your review.`
+      const link   = `/approvals/${id}`
+      const ctaUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}${link}`
+
+      // In-app notifications
+      const rows = recipients.map((r) => ({
+        request_id:   id,
+        company_id:   companyId,
+        recipient_id: r.id,
+        type:         'approval_required',
+        title,
+        body,
+        link,
+        entity_type:  'approval_request',
+        entity_id:    id,
+        is_read:      false,
+        sent_at:      new Date().toISOString(),
+      }))
+      await adminDb.from('approval_notifications').insert(rows)
+
+      // Emails
+      const { sendApprovalEmail } = await import('@/lib/notifications/engine')
+      await Promise.allSettled(
+        recipients
+          .filter((r) => r.email)
+          .map((r) =>
+            sendApprovalEmail(
+              r.email!,
+              `Approval Required: ${data.title}`,
+              body,
+              ctaUrl,
+              r.full_name ?? undefined,
+            )
+          )
+      )
+    }
+  } catch { /* non-critical */ }
 
   return data as ApprovalRequest
 }
@@ -356,22 +427,76 @@ export async function approveStep(
   const updated = await getApprovalRequestById(requestId, companyId)
   if (!updated) throw new Error('Request not found after advance')
 
-  // Notify next approver if still pending
-  if (!['approved', 'rejected', 'cancelled', 'completed'].includes(updated.status)) {
-    const nextStep = updated.steps?.find((s) => s.status === 'pending')
-    if (nextStep?.approver_id) {
-      await createNotification(supabase, requestId, companyId, nextStep.approver_id, 'approval_requested',
-        'Your Approval Required', `Please review: ${updated.title}`,
-        `/approvals/${requestId}`)
-    }
-  }
+  // Notify next approver if still pending, or notify submitter + admin on final approval
+  try {
+    const adminDb = createAdminClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    const { sendApprovalEmail } = await import('@/lib/notifications/engine')
 
-  // Notify requester of final approval
-  if (updated.status === 'approved' && updated.requested_by) {
-    await createNotification(supabase, requestId, companyId, updated.requested_by, 'approved',
-      'Request Approved', `Your request "${updated.title}" has been approved.`,
-      `/approvals/${requestId}`)
-  }
+    if (!['approved', 'rejected', 'cancelled', 'completed'].includes(updated.status)) {
+      // Workflow still in progress — notify next step's approver(s)
+      const nextStep = updated.steps?.find((s: { status: string }) => s.status === 'pending')
+      const nextRole = nextStep?.role_required
+      const nextApproverId = nextStep?.approver_id ?? null
+
+      const recipientIds = new Set<string>()
+      if (nextApproverId) recipientIds.add(nextApproverId)
+
+      if (nextRole) {
+        const { data: roleUsers } = await adminDb
+          .from('users').select('id, email, full_name')
+          .eq('company_id', companyId).eq('role', nextRole).eq('status', 'active')
+        for (const u of (roleUsers ?? []) as { id: string; email: string | null; full_name: string | null }[]) {
+          recipientIds.add(u.id)
+        }
+      }
+
+      if (recipientIds.size > 0) {
+        const { data: recUsers } = await adminDb
+          .from('users').select('id, email, full_name')
+          .eq('company_id', companyId).in('id', Array.from(recipientIds))
+        const recs = (recUsers ?? []) as { id: string; email: string | null; full_name: string | null }[]
+        const title = `Your Approval Required: ${updated.title}`
+        const body  = `Step ${nextStep?.step_order ?? ''}: "${nextStep?.name ?? 'Next approval step'}" is waiting for your decision on "${updated.title}".`
+        const link  = `/approvals/${requestId}`
+        await adminDb.from('approval_notifications').insert(
+          recs.map((r) => ({ request_id: requestId, company_id: companyId, recipient_id: r.id, type: 'approval_required', title, body, link, entity_type: 'approval_request', entity_id: requestId, is_read: false, sent_at: new Date().toISOString() }))
+        )
+        await Promise.allSettled(
+          recs.filter((r) => r.email).map((r) => sendApprovalEmail(r.email!, title, body, `${appUrl}${link}`, r.full_name ?? undefined))
+        )
+      }
+
+    } else if (updated.status === 'approved') {
+      // Final approval — notify submitter + procurement_officer + admin
+      const notifyRoles = new Set(['administrator', 'procurement_officer', 'procurement_manager'])
+      const recipientIds = new Set<string>()
+      if (updated.requested_by) recipientIds.add(updated.requested_by)
+
+      const { data: roleUsers } = await adminDb
+        .from('users').select('id, email, full_name')
+        .eq('company_id', companyId).in('role', Array.from(notifyRoles)).eq('status', 'active')
+      for (const u of (roleUsers ?? []) as { id: string; email: string | null; full_name: string | null }[]) {
+        recipientIds.add(u.id)
+      }
+
+      if (recipientIds.size > 0) {
+        const { data: recUsers } = await adminDb
+          .from('users').select('id, email, full_name')
+          .in('id', Array.from(recipientIds))
+        const recs = (recUsers ?? []) as { id: string; email: string | null; full_name: string | null }[]
+        const title = `Approved: ${updated.title}`
+        const body  = `The approval request "${updated.title}" has been fully approved.`
+        const link  = `/approvals/${requestId}`
+        await adminDb.from('approval_notifications').insert(
+          recs.map((r) => ({ request_id: requestId, company_id: companyId, recipient_id: r.id, type: 'approved', title, body, link, entity_type: 'approval_request', entity_id: requestId, is_read: false, sent_at: new Date().toISOString() }))
+        )
+        await Promise.allSettled(
+          recs.filter((r) => r.email).map((r) => sendApprovalEmail(r.email!, title, body, `${appUrl}${link}`, r.full_name ?? undefined))
+        )
+      }
+    }
+  } catch { /* non-critical */ }
 
   return updated
 }
@@ -411,11 +536,38 @@ export async function rejectRequest(
 
   await logAction(supabase, requestId, companyId, userId, 'rejected', old.status, 'rejected', reason, stepId ?? undefined, isInternal)
 
-  if (old.requested_by) {
-    await createNotification(supabase, requestId, companyId, old.requested_by, 'rejected',
-      'Request Rejected', `Your request "${old.title}" was rejected. Reason: ${reason}`,
-      `/approvals/${requestId}`)
-  }
+  // Notify submitter + procurement roles + admin with email
+  try {
+    const adminDb = createAdminClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    const { sendApprovalEmail } = await import('@/lib/notifications/engine')
+
+    const recipientIds = new Set<string>()
+    if (old.requested_by) recipientIds.add(old.requested_by)
+
+    const { data: roleUsers } = await adminDb
+      .from('users').select('id, email, full_name')
+      .eq('company_id', companyId)
+      .in('role', ['administrator', 'procurement_officer', 'procurement_manager'])
+      .eq('status', 'active')
+    for (const u of (roleUsers ?? []) as { id: string; email: string | null; full_name: string | null }[]) {
+      recipientIds.add(u.id)
+    }
+
+    if (recipientIds.size > 0) {
+      const { data: recUsers } = await adminDb.from('users').select('id, email, full_name').in('id', Array.from(recipientIds))
+      const recs = (recUsers ?? []) as { id: string; email: string | null; full_name: string | null }[]
+      const title = `Rejected: ${old.title}`
+      const body  = `The approval request "${old.title}" was rejected. Reason: ${reason}`
+      const link  = `/approvals/${requestId}`
+      await adminDb.from('approval_notifications').insert(
+        recs.map((r) => ({ request_id: requestId, company_id: companyId, recipient_id: r.id, type: 'rejected', title, body, link, entity_type: 'approval_request', entity_id: requestId, is_read: false, sent_at: new Date().toISOString() }))
+      )
+      await Promise.allSettled(
+        recs.filter((r) => r.email).map((r) => sendApprovalEmail(r.email!, title, body, `${appUrl}${link}`, r.full_name ?? undefined))
+      )
+    }
+  } catch { /* non-critical */ }
 
   return data as ApprovalRequest
 }
@@ -454,11 +606,36 @@ export async function returnRequest(
 
   await logAction(supabase, requestId, companyId, userId, 'returned', old.status, 'returned', reason, stepId ?? undefined)
 
-  if (old.requested_by) {
-    await createNotification(supabase, requestId, companyId, old.requested_by, 'returned',
-      'Request Returned', `Your request "${old.title}" was returned for revision. Reason: ${reason}`,
-      `/approvals/${requestId}`)
-  }
+  // Notify submitter + admin with email
+  try {
+    const adminDb = createAdminClient() as any // eslint-disable-line @typescript-eslint/no-explicit-any
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    const { sendApprovalEmail } = await import('@/lib/notifications/engine')
+
+    const recipientIds = new Set<string>()
+    if (old.requested_by) recipientIds.add(old.requested_by)
+
+    const { data: adminUsers } = await adminDb
+      .from('users').select('id, email, full_name')
+      .eq('company_id', companyId).eq('role', 'administrator').eq('status', 'active')
+    for (const u of (adminUsers ?? []) as { id: string; email: string | null; full_name: string | null }[]) {
+      recipientIds.add(u.id)
+    }
+
+    if (recipientIds.size > 0) {
+      const { data: recUsers } = await adminDb.from('users').select('id, email, full_name').in('id', Array.from(recipientIds))
+      const recs = (recUsers ?? []) as { id: string; email: string | null; full_name: string | null }[]
+      const title = `Returned for Revision: ${old.title}`
+      const body  = `The approval request "${old.title}" has been returned for revision. Reason: ${reason}`
+      const link  = `/approvals/${requestId}`
+      await adminDb.from('approval_notifications').insert(
+        recs.map((r) => ({ request_id: requestId, company_id: companyId, recipient_id: r.id, type: 'returned', title, body, link, entity_type: 'approval_request', entity_id: requestId, is_read: false, sent_at: new Date().toISOString() }))
+      )
+      await Promise.allSettled(
+        recs.filter((r) => r.email).map((r) => sendApprovalEmail(r.email!, title, body, `${appUrl}${link}`, r.full_name ?? undefined))
+      )
+    }
+  } catch { /* non-critical */ }
 
   return data as ApprovalRequest
 }

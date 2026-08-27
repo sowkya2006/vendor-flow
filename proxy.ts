@@ -71,26 +71,38 @@ async function getPortalFromDB(userId: string, req: NextRequest): Promise<Portal
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = makeClient(req) as any
+
+    // First try the RPC (works for company users)
     const { data, error } = await db.rpc('get_user_portal', { p_user_id: userId })
+
+    if (!error && data) {
+      const result = typeof data === 'string' ? JSON.parse(data) : data
+      if (result?.portal) {
+        return {
+          portal: result.portal as Portal,
+          role:   result.role  ?? 'viewer',
+          setup:  result.setup ?? false,
+        }
+      }
+    }
+
+    // RPC returned nothing — check vendor tables directly.
+    // This handles self-registered vendors who are NOT in public.users.
+    const [vcRes, vuRes] = await Promise.all([
+      db.from('vendor_companies').select('id').eq('user_id', userId).maybeSingle(),
+      db.from('vendor_users').select('id').eq('user_id', userId).maybeSingle(),
+    ])
+
+    if (vcRes.data || vuRes.data) {
+      return { portal: 'vendor', role: 'vendor', setup: true }
+    }
 
     if (error) {
       console.error('[proxy] RPC error:', error.message)
-      return null
-    }
-
-    // Handle both object and JSON-string responses
-    const result = typeof data === 'string' ? JSON.parse(data) : data
-
-    if (!result?.portal) {
+    } else {
       console.warn('[proxy] no portal for userId:', userId)
-      return null
     }
-
-    return {
-      portal: result.portal as Portal,
-      role:   result.role  ?? 'viewer',
-      setup:  result.setup ?? false,
-    }
+    return null
   } catch (err) {
     console.error('[proxy] getPortalFromDB threw:', err)
     return null
@@ -112,6 +124,11 @@ const COMPANY_AUTH = [
 
 const VENDOR_AUTH = [
   '/vendor/login', '/vendor/register', '/vendor/verify-complete',
+]
+
+// Vendor onboarding routes — require auth but profile not yet complete
+const VENDOR_ONBOARDING = [
+  '/vendor/complete-profile',
 ]
 
 const VENDOR_ROUTES = [
@@ -174,10 +191,15 @@ function goWithReturn(req: NextRequest, to: string): NextResponse {
   return NextResponse.redirect(url)
 }
 
-function allow(base: NextResponse, portalCookie?: Portal): NextResponse {
+function allow(base: NextResponse, portalCookie?: Portal, currentCookie?: Portal | null): NextResponse {
   // Always nuke the old cache cookie
   base.cookies.delete('vf_ctx')
-  if (portalCookie) setPortalCookie(base, portalCookie)
+  // Only set the portal cookie if it's different from what's already there.
+  // This prevents the cookie from being overwritten on every request,
+  // which would cause cross-tab interference when both portals are open.
+  if (portalCookie && portalCookie !== currentCookie) {
+    setPortalCookie(base, portalCookie)
+  }
   return base
 }
 
@@ -211,9 +233,10 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const isCompanyRoute = isUnder(pathname, COMPANY_ROUTES)
   const isVendorAuth   = isUnder(pathname, VENDOR_AUTH)
   const isVendorRoute  = isUnder(pathname, VENDOR_ROUTES)
+  const isVendorOnboarding = isUnder(pathname, VENDOR_ONBOARDING)
   const isWorkspace    = pathname === '/workspace/setup' || pathname.startsWith('/workspace/')
 
-  if (!isCompanyAuth && !isCompanyRoute && !isVendorAuth && !isVendorRoute && !isWorkspace) {
+  if (!isCompanyAuth && !isCompanyRoute && !isVendorAuth && !isVendorRoute && !isVendorOnboarding && !isWorkspace) {
     return NextResponse.next()
   }
 
@@ -227,17 +250,11 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // COMPANY AUTH PAGES  (/company/login, /login, /signup, etc.)
   // ─────────────────────────────────────────────────────────────────────────
   if (isCompanyAuth) {
-    // Clear portal cookie whenever a login page is visited.
-    // This prevents a stale vf_portal cookie from auto-redirecting
-    // the user before they've entered credentials.
     const res = NextResponse.next(supabaseResponse)
     clearPortalCookie(res)
-
-    // If they have both a live session AND a valid portal cookie, skip login
     if (user && portalCookie === 'company') {
       return go(request, '/dashboard', true)
     }
-
     return res
   }
 
@@ -245,15 +262,11 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // VENDOR AUTH PAGES  (/vendor/login, /vendor/register)
   // ─────────────────────────────────────────────────────────────────────────
   if (isVendorAuth) {
-    // Clear portal cookie whenever a login page is visited.
     const res = NextResponse.next(supabaseResponse)
     clearPortalCookie(res)
-
-    // If they have both a live session AND a valid portal cookie, skip login
     if (user && portalCookie === 'vendor') {
       return go(request, '/vendor/dashboard', true)
     }
-
     return res
   }
 
@@ -262,80 +275,95 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // ─────────────────────────────────────────────────────────────────────────
   if (isWorkspace) {
     if (!user) return go(request, '/company/login')
-    return allow(supabaseResponse)
+    return allow(supabaseResponse, 'company', portalCookie)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // VENDOR PORTAL ROUTES
+  // VENDOR ONBOARDING (/vendor/complete-profile)
+  // Requires auth + is_vendor. Does not require vendor_companies to exist yet.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (isVendorOnboarding) {
+    if (!user) return go(request, '/vendor/login')
+    // Must be a vendor user
+    if (!user.user_metadata?.is_vendor) return go(request, '/company/login')
+    return allow(supabaseResponse, 'vendor', portalCookie)
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // VENDOR PORTAL ROUTES — Always verify from DB, never trust cookie alone
   // ─────────────────────────────────────────────────────────────────────────
   if (isVendorRoute) {
     if (!user) return goWithReturn(request, '/vendor/login')
 
-    // Fast path: portal cookie says vendor
-    if (portalCookie === 'vendor') {
-      return allow(supabaseResponse, 'vendor')
-    }
-
-    // Portal cookie says company — definitely wrong portal
-    if (portalCookie === 'company') {
-      return go(request, '/dashboard')
-    }
-
-    // No cookie — ask the DB
+    // ALWAYS check the DB — do not fast-path on cookie alone.
     const ctx = await getPortalFromDB(user.id, request)
-    if (!ctx) return go(request, '/vendor/login', true)
 
-    if (ctx.portal === 'company') return go(request, '/dashboard')
+    if (!ctx) {
+      // No vendor record and not a company user — send to complete profile
+      // if user has is_vendor metadata, they just need to fill profile
+      if (user.user_metadata?.is_vendor === true) {
+        if (pathname !== '/vendor/complete-profile') {
+          return go(request, '/vendor/complete-profile')
+        }
+        return allow(supabaseResponse, 'vendor', portalCookie)
+      }
+      return go(request, '/vendor/login', true)
+    }
 
-    // Valid vendor — set cookie for future requests
-    const res = allow(supabaseResponse, 'vendor')
+    if (ctx.portal === 'vendor') {
+      return allow(supabaseResponse, 'vendor', portalCookie)
+    }
+
+    // Company user on vendor route
+    const url = request.nextUrl.clone()
+    url.pathname = '/vendor/login'
+    url.search = '?error=wrong_account&hint=Please+sign+in+to+your+vendor+account'
+    const res = NextResponse.redirect(url)
+    clearPortalCookie(res)
     return res
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // COMPANY PORTAL ROUTES
   // ─────────────────────────────────────────────────────────────────────────
-  if (!isCompanyRoute) return allow(supabaseResponse)
+  if (!isCompanyRoute) return allow(supabaseResponse, undefined, portalCookie)
   if (!user) return goWithReturn(request, '/company/login')
 
-  // Fast path: portal cookie says company
-  if (portalCookie === 'company') {
-    // Still need role for route blocking — but skip DB call for portal check
-    // Only check role blocking without a DB call using a lightweight approach:
-    // For role blocking we need the role. We read it from the DB only if needed.
-    // For now allow through — the page server components will guard roles.
-    // Role-blocking is a UX convenience, not a security boundary (RLS handles that).
-    return allow(supabaseResponse, 'company')
-  }
-
-  // Portal cookie says vendor — definitely wrong portal
-  if (portalCookie === 'vendor') {
-    return go(request, '/vendor/dashboard')
-  }
-
-  // No cookie — ask the DB
-  const ctx = await getPortalFromDB(user.id, request)
-  if (!ctx) return go(request, '/company/login', true)
-
-  if (ctx.portal === 'vendor') {
+  // If user has is_vendor metadata, they shouldn't be on company routes
+  if (user.user_metadata?.is_vendor === true) {
     return go(request, '/vendor/dashboard', true)
   }
 
-  // Valid company user — workspace check
-  // ONLY the administrator who created the company needs to set up the workspace.
-  // Employees invited by the admin already belong to a set-up (or in-progress)
-  // company — they should NEVER be redirected to workspace setup.
+  // Trust vf_portal=company cookie — it's set by our server-side API (httpOnly)
+  // only after verifying the user exists in public.users with a company_id.
+  if (portalCookie === 'company') {
+    const previewRole = request.cookies.get('vf_preview_role')?.value
+    if (previewRole && previewRole !== 'administrator' && previewRole !== 'admin') {
+      const blocked = ROLE_BLOCKED[previewRole] ?? []
+      if (blocked.some(b => pathname === b || pathname.startsWith(b + '/'))) {
+        return go(request, '/403')
+      }
+    }
+    return allow(supabaseResponse, 'company', portalCookie)
+  }
+
+  // No portal cookie — must check DB to determine portal
+  const ctx = await getPortalFromDB(user.id, request)
+  if (!ctx) return goWithReturn(request, '/company/login')
+
+  if (ctx.portal === 'vendor') return go(request, '/vendor/dashboard', true)
+
+  // Valid company user — workspace setup check
   if (!ctx.setup && (ctx.role === 'administrator' || ctx.role === 'admin') && !pathname.startsWith('/workspace')) {
     return go(request, '/workspace/setup')
   }
 
-  // Role-based route blocking
+  // Role blocking
   let role = ctx.role
   if (role === 'administrator' || role === 'admin') {
     const preview = request.cookies.get('vf_preview_role')?.value
     if (preview) role = preview
   }
-
   if (role !== 'administrator' && role !== 'admin') {
     const blocked = ROLE_BLOCKED[role] ?? []
     if (blocked.some(b => pathname === b || pathname.startsWith(b + '/'))) {
@@ -343,8 +371,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const res = allow(supabaseResponse, 'company')
-  return res
+  return allow(supabaseResponse, 'company', portalCookie)
 }
 
 export const config = {

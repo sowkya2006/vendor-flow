@@ -40,19 +40,19 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           {/* Footer */}
           <p className="mt-6 text-center text-xs text-[--color-foreground-subtle]">
             By using VendorFlow you agree to our{' '}
-            <a
-              href="#"
+            <Link
+              href="/legal/terms"
               className="text-[--color-foreground-muted] hover:text-[--color-foreground] underline underline-offset-2 focus-visible:outline-none"
             >
               Terms of Service
-            </a>{' '}
+            </Link>{' '}
             and{' '}
-            <a
-              href="#"
+            <Link
+              href="/legal/privacy"
               className="text-[--color-foreground-muted] hover:text-[--color-foreground] underline underline-offset-2 focus-visible:outline-none"
             >
               Privacy Policy
-            </a>
+            </Link>
           </p>
         </div>
       </main>

@@ -41,9 +41,10 @@ interface VendorListProps {
   total: number
   hasNextPage: boolean
   page: number
+  canCreate?: boolean
 }
 
-export function VendorList({ vendors, total, hasNextPage, page }: VendorListProps) {
+export function VendorList({ vendors, total, hasNextPage, page, canCreate = true }: VendorListProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
@@ -112,12 +113,14 @@ export function VendorList({ vendors, total, hasNextPage, page }: VendorListProp
             </SelectContent>
           </Select>
 
-          <Button asChild size="default" className="shrink-0">
-            <Link href="/vendors/new">
-              <Plus className="h-4 w-4" />
-              Add vendor
-            </Link>
-          </Button>
+          {canCreate && (
+            <Button asChild size="default" className="shrink-0">
+              <Link href="/vendors/new">
+                <Plus className="h-4 w-4" />
+                Add vendor
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -137,7 +140,7 @@ export function VendorList({ vendors, total, hasNextPage, page }: VendorListProp
           ))}
         </div>
       ) : vendors.length === 0 ? (
-        <EmptyVendors hasFilters={hasFilters} />
+        <EmptyVendors hasFilters={hasFilters} canCreate={canCreate} />
       ) : (
         <motion.div
           initial="hidden"
@@ -187,7 +190,7 @@ export function VendorList({ vendors, total, hasNextPage, page }: VendorListProp
   )
 }
 
-function EmptyVendors({ hasFilters }: { hasFilters: boolean }) {
+function EmptyVendors({ hasFilters, canCreate }: { hasFilters: boolean; canCreate: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[--color-border] bg-[--color-background-subtle] py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[--color-background-muted]">
@@ -200,10 +203,12 @@ function EmptyVendors({ hasFilters }: { hasFilters: boolean }) {
         <p className="mt-1 text-sm text-[--color-foreground-muted]">
           {hasFilters
             ? 'Try adjusting your search or filter criteria.'
-            : 'Add your first vendor to start building your supplier network.'}
+            : canCreate
+              ? 'Add your first vendor to start building your supplier network.'
+              : 'No vendors have been added yet. Check back later.'}
         </p>
       </div>
-      {!hasFilters && (
+      {!hasFilters && canCreate && (
         <Button asChild className="mt-1">
           <Link href="/vendors/new">
             <Plus className="h-4 w-4" />

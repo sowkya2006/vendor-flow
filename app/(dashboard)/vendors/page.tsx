@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
+import { getUserRole } from '@/lib/supabase/get-auth'
 import { getVendors } from '@/lib/supabase/vendors'
 import { WorkspaceHeader } from '@/components/layout/workspace-header'
 import { PageContainer } from '@/components/shared/page-container'
@@ -19,7 +20,7 @@ interface PageProps {
   }>
 }
 
-async function VendorListLoader({ filters }: { filters: VendorFilters }) {
+async function VendorListLoader({ filters, canCreate }: { filters: VendorFilters; canCreate: boolean }) {
   const companyId = await getCompanyId()
   const result = await getVendors(companyId, filters)
 
@@ -29,6 +30,7 @@ async function VendorListLoader({ filters }: { filters: VendorFilters }) {
       total={result.total}
       hasNextPage={result.hasNextPage}
       page={result.page}
+      canCreate={canCreate}
     />
   )
 }
@@ -44,6 +46,11 @@ export default async function VendorsPage({ searchParams }: PageProps) {
     pageSize: 20,
   }
 
+  // Only admin and procurement_officer can add vendors.
+  // Procurement manager can only review/approve existing vendors.
+  const role = await getUserRole()
+  const canCreate = role === 'administrator' || role === 'admin'
+
   return (
     <div className="min-h-full">
       <WorkspaceHeader
@@ -52,7 +59,7 @@ export default async function VendorsPage({ searchParams }: PageProps) {
       />
       <PageContainer>
         <Suspense fallback={<TableSkeleton rows={8} />}>
-          <VendorListLoader filters={filters} />
+          <VendorListLoader filters={filters} canCreate={canCreate} />
         </Suspense>
       </PageContainer>
     </div>

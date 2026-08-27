@@ -100,15 +100,19 @@ export async function registerVendorCompany(
   input: RegisterVendorInput,
   { useServiceRole = false }: { useServiceRole?: boolean } = {},
 ): Promise<VendorCompany> {
-  // Use service role so this works even if the session cookie isn't yet on the
-  // server request (common when registerVendorAction is called right after signIn)
   const supabase = useServiceRole ? serviceDb() : await db()
   const { data, error } = await supabase
     .from('vendor_companies')
     .upsert({ user_id: userId, ...input }, { onConflict: 'user_id' })
     .select()
     .single()
-  if (error) throw error
+  if (error) {
+    // Always throw a proper Error object with a string message
+    const msg = typeof error === 'object' && error !== null
+      ? (error as { message?: string }).message ?? JSON.stringify(error)
+      : String(error)
+    throw new Error(msg)
+  }
   return data as VendorCompany
 }
 

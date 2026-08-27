@@ -1,95 +1,75 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Eye, EyeOff, Loader2, Mail, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Mail, Lock, User, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { createClient } from '@/lib/supabase/client'
-import { registerVendorBeforeVerificationAction } from '@/app/vendor/actions'
 
-const INDUSTRIES = ['Manufacturing', 'Retail', 'Technology', 'Healthcare', 'Construction', 'Logistics', 'Education', 'Finance', 'Government', 'Other']
+const schema = z
+  .object({
+    email:           z.string().email('Enter a valid email'),
+    password:        z.string().min(8, 'Password must be at least 8 characters'),
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
+    contactName:     z.string().max(200).optional(),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  })
 
-const schema = z.object({
-  email:        z.string().email('Enter a valid email'),
-  password:     z.string().min(8, 'Password must be at least 8 characters'),
-  company_name: z.string().min(1, 'Company name is required').max(200),
-  contact_name: z.string().max(200).optional(),
-  phone:        z.string().max(30).optional(),
-  website:      z.string().optional(),
-  industry:     z.string().optional(),
-  gst_number:   z.string().max(50).optional(),
-  address:      z.string().max(500).optional(),
-  description:  z.string().max(2000).optional(),
-})
 type Values = z.infer<typeof schema>
 
 export function VendorSignupForm() {
-  const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [showPw, setShowPw] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [step, setStep] = useState<1 | 2 | 'verify'>(1)
-  const [verifyEmail, setVerifyEmail] = useState('')
+  const [showPw, setShowPw]   = useState(false)
+  const [showCp, setShowCp]   = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null)
 
-  const { register, handleSubmit, trigger, formState: { errors } } = useForm<Values>({
+  const { register, handleSubmit, formState: { errors } } = useForm<Values>({
     resolver: zodResolver(schema),
   })
-
-  async function handleStep1() {
-    const valid = await trigger(['email', 'password', 'company_name', 'contact_name'])
-    if (valid) setStep(2)
-  }
 
   function onSubmit(values: Values) {
     setError(null)
     startTransition(async () => {
       try {
-        const supabase = createClient()
-
-        // ── Step 1: Create auth account ──────────────────────────────────
-        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-          email: values.email,
-          password: values.password,
-          options: {
-            data: {
-              full_name: values.contact_name ?? '',
-              is_vendor: true,
-            },
-            emailRedirectTo: `${window.location.origin}/vendor/verify-complete`,
-          },
-        })
-        if (signUpErr) throw signUpErr
-
-        const userId = signUpData.user?.id
-        if (!userId) throw new Error('Failed to create account')
-
-        // ── Step 2: Save vendor profile immediately using service role ───
-        // This saves ALL data BEFORE email verification.
-        // The upsert ensures no duplicates even if called multiple times.
-        const { email: _e, password: _p, ...profileData } = values
-        await registerVendorBeforeVerificationAction({
-          userId,
-          ...profileData,
-          email: values.email,
+        const res = await fetch('/api/auth/vendor-signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email:       values.email,
+            password:    values.password,
+            contactName: values.contactName ?? null,
+          }),
         })
 
-        // ── Step 3: Check if email confirmation needed ───────────────────
-        if (signUpData.session) {
-          // Email confirmation disabled — already signed in
-          router.replace('/vendor/dashboard')
-          router.refresh()
+        const data = await res.json()
+
+        if (!res.ok) {
+          if (res.status === 409) {
+            setError('This email is already registered. Please sign in at /vendor/login')
+          } else {
+            setError(data.error ?? 'Registration failed. Please try again.')
+          }
           return
         }
 
-        // Email confirmation required — show verify screen
-        setVerifyEmail(values.email)
-        setStep('verify')
+        if (data.emailSent) {
+          // Email sent via Brevo — show "check your email" screen
+          setVerifyEmail(values.email)
+          return
+        }
+
+        // Brevo not configured (dev/local) — sign in directly and go to complete profile
+        if (data.ok) {
+          try { await fetch('/api/auth/set-vendor-portal', { method: 'POST' }) } catch { /* non-critical */ }
+          window.location.href = '/vendor/complete-profile'
+        }
 
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Registration failed. Please try again.')
@@ -97,8 +77,8 @@ export function VendorSignupForm() {
     })
   }
 
-  // ── Email verification waiting screen ─────────────────────────────────────
-  if (step === 'verify') {
+  // ── Email sent screen ─────────────────────────────────────────────────────
+  if (verifyEmail) {
     return (
       <div className="space-y-5 text-center">
         <div className="flex justify-center">
@@ -107,36 +87,32 @@ export function VendorSignupForm() {
           </div>
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-[--color-foreground]">Check your email</h2>
-          <p className="mt-1 text-sm text-[--color-foreground-muted]">
-            We sent a verification link to{' '}
+          <h2 className="text-xl font-semibold text-[--color-foreground]">Check your email</h2>
+          <p className="mt-2 text-sm text-[--color-foreground-muted]">
+            We sent a sign-in link to{' '}
             <span className="font-medium text-[--color-foreground]">{verifyEmail}</span>
           </p>
         </div>
-        <div className="rounded-xl border border-[--color-border] bg-[--color-background-subtle] p-4 text-left space-y-2">
+        <div className="rounded-xl border border-[--color-border] bg-[--color-background-subtle] p-4 text-left space-y-2.5">
           <p className="text-xs font-semibold text-[--color-foreground] uppercase tracking-wide">What happens next</p>
-          <ul className="space-y-1.5 text-sm text-[--color-foreground-muted]">
-            <li className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-[--color-success] shrink-0" />
-              Your company profile has been saved
+          <ul className="space-y-2 text-sm text-[--color-foreground-muted]">
+            <li className="flex items-start gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+              Click the <strong>Sign In &amp; Complete Profile</strong> button in the email
             </li>
-            <li className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-[--color-success] shrink-0" />
-              Click the link in your email to verify
+            <li className="flex items-start gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+              Fill in your vendor company details
             </li>
-            <li className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-[--color-success] shrink-0" />
-              You will be redirected to Vendor Login
+            <li className="flex items-start gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+              You can also sign in at <a href="/vendor/login" className="text-[--color-primary] hover:underline">/vendor/login</a> with your password
             </li>
           </ul>
         </div>
         <p className="text-xs text-[--color-foreground-subtle]">
           Didn&apos;t receive it? Check spam or{' '}
-          <button
-            type="button"
-            onClick={() => { setStep(1); setError(null) }}
-            className="text-[--color-primary] hover:underline font-medium"
-          >
+          <button type="button" onClick={() => setVerifyEmail(null)} className="text-[--color-primary] hover:underline font-medium">
             try again
           </button>
         </p>
@@ -147,112 +123,74 @@ export function VendorSignupForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
           {error}
         </div>
       )}
 
-      {/* ── Step 1 — Account basics ─────────────────────────────────────── */}
-      {step === 1 && (
-        <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="vr-email">Email Address *</Label>
-              <Input id="vr-email" type="email" {...register('email')} placeholder="vendor@company.com" />
-              {errors.email && <p className="text-xs text-red-600">{errors.email.message}</p>}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="vr-pw">Password *</Label>
-              <div className="relative">
-                <Input
-                  id="vr-pw"
-                  type={showPw ? 'text' : 'password'}
-                  {...register('password')}
-                  placeholder="Min. 8 characters"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[--color-foreground-subtle]"
-                >
-                  {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
-              </div>
-              {errors.password && <p className="text-xs text-red-600">{errors.password.message}</p>}
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="vr-company">Company Name *</Label>
-              <Input id="vr-company" {...register('company_name')} placeholder="Acme Supplies Ltd." />
-              {errors.company_name && <p className="text-xs text-red-600">{errors.company_name.message}</p>}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="vr-contact">Contact Name</Label>
-              <Input id="vr-contact" {...register('contact_name')} placeholder="Your full name" />
-            </div>
-          </div>
-          <Button type="button" className="w-full" onClick={handleStep1}>
-            Continue →
-          </Button>
+      <div className="space-y-1.5">
+        <Label htmlFor="vr-name">Your Name</Label>
+        <div className="relative">
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[--color-foreground-subtle] pointer-events-none" />
+          <Input id="vr-name" type="text" {...register('contactName')} placeholder="Jane Smith" className="pl-10" />
         </div>
-      )}
+      </div>
 
-      {/* ── Step 2 — Company details ────────────────────────────────────── */}
-      {step === 2 && (
-        <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="vr-phone">Phone</Label>
-              <Input id="vr-phone" {...register('phone')} placeholder="+91 98765 43210" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="vr-gst">GST Number</Label>
-              <Input id="vr-gst" {...register('gst_number')} placeholder="22AAAAA0000A1Z5" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="vr-industry">Industry</Label>
-              <select
-                id="vr-industry"
-                {...register('industry')}
-                className="w-full h-9 rounded-lg border border-white/[0.12] bg-[#0f1623] text-[#E5E7EB] px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4F8CFF]/50"
-              >
-                <option value="">Select…</option>
-                {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="vr-website">Website</Label>
-              <Input id="vr-website" {...register('website')} placeholder="https://yourcompany.com" />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="vr-address">Address</Label>
-            <Input id="vr-address" {...register('address')} placeholder="Registered address" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="vr-desc">Company Description</Label>
-            <Textarea
-              id="vr-desc"
-              {...register('description')}
-              rows={3}
-              placeholder="What products or services does your company offer?"
-            />
-          </div>
-          <div className="flex gap-3">
-            <Button type="button" variant="outline" className="flex-1" onClick={() => setStep(1)}>
-              Back
-            </Button>
-            <Button type="submit" disabled={isPending} className="flex-1">
-              {isPending
-                ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating Account…</>
-                : 'Create Vendor Account'
-              }
-            </Button>
-          </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="vr-email">Email Address *</Label>
+        <div className="relative">
+          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[--color-foreground-subtle] pointer-events-none" />
+          <Input id="vr-email" type="email" autoComplete="email" {...register('email')} placeholder="vendor@company.com" className="pl-10" />
         </div>
-      )}
+        {errors.email && <p className="text-xs text-red-600">{errors.email.message}</p>}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="vr-pw">Password *</Label>
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[--color-foreground-subtle] pointer-events-none" />
+          <Input
+            id="vr-pw"
+            type={showPw ? 'text' : 'password'}
+            autoComplete="new-password"
+            {...register('password')}
+            placeholder="Min. 8 characters"
+            className="pl-10 pr-10"
+          />
+          <button type="button" onClick={() => setShowPw(v => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[--color-foreground-subtle]">
+            {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
+        </div>
+        {errors.password && <p className="text-xs text-red-600">{errors.password.message}</p>}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="vr-confirm">Confirm Password *</Label>
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[--color-foreground-subtle] pointer-events-none" />
+          <Input
+            id="vr-confirm"
+            type={showCp ? 'text' : 'password'}
+            autoComplete="new-password"
+            {...register('confirmPassword')}
+            placeholder="••••••••"
+            className="pl-10 pr-10"
+          />
+          <button type="button" onClick={() => setShowCp(v => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[--color-foreground-subtle]">
+            {showCp ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
+        </div>
+        {errors.confirmPassword && <p className="text-xs text-red-600">{errors.confirmPassword.message}</p>}
+      </div>
+
+      <Button type="submit" disabled={isPending} className="w-full mt-2">
+        {isPending
+          ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating account…</>
+          : 'Create Vendor Account'
+        }
+      </Button>
     </form>
   )
 }

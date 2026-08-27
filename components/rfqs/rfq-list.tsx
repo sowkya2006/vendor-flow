@@ -229,7 +229,7 @@ export function RFQList({ rfqs, total, hasNextPage, page, canCreate = true }: RF
           {Array.from({ length: 6 }).map((_, i) => <RFQRowSkeleton key={i} />)}
         </div>
       ) : rfqs.length === 0 ? (
-        <EmptyRFQs hasFilters={hasFilters} />
+        <EmptyRFQs hasFilters={hasFilters} canCreate={canCreate} />
       ) : (
         <div className="space-y-2.5">
           {rfqs.map((rfq) => <RFQRow key={rfq.id} rfq={rfq} />)}
@@ -264,7 +264,7 @@ export function RFQList({ rfqs, total, hasNextPage, page, canCreate = true }: RF
   )
 }
 
-function EmptyRFQs({ hasFilters }: { hasFilters: boolean }) {
+function EmptyRFQs({ hasFilters, canCreate }: { hasFilters: boolean; canCreate: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[--color-border] bg-[--color-background-subtle] py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[--color-background-muted]">
@@ -277,10 +277,12 @@ function EmptyRFQs({ hasFilters }: { hasFilters: boolean }) {
         <p className="mt-1 text-sm text-[--color-foreground-muted]">
           {hasFilters
             ? 'Try adjusting your search or filters.'
-            : 'Create your first RFQ to start collecting vendor quotes.'}
+            : canCreate
+              ? 'Create your first RFQ to start collecting vendor quotes.'
+              : 'No RFQs to review yet. They will appear here once created.'}
         </p>
       </div>
-      {!hasFilters && (
+      {!hasFilters && canCreate && (
         <Button asChild className="mt-1">
           <Link href="/rfqs/new">
             <Plus className="h-4 w-4" />

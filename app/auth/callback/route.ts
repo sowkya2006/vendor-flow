@@ -2,270 +2,259 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 
-// Portal cookie — must match proxy.ts constants exactly
 const PORTAL_COOKIE = 'vf_portal'
-const PORTAL_TTL    = 60 * 60 * 24 * 7  // 7 days
+const PORTAL_TTL    = 60 * 60 * 24 * 7 // 7 days
 
 function withPortalCookie(res: NextResponse, portal: 'company' | 'vendor'): NextResponse {
   res.cookies.set(PORTAL_COOKIE, portal, {
     httpOnly: true,
     sameSite: 'lax',
-    maxAge:   PORTAL_TTL,
-    path:     '/',
+    maxAge: PORTAL_TTL,
+    path: '/',
+    secure: process.env.NODE_ENV === 'production',
   })
-  // Always nuke the old stale cache cookie
   res.cookies.delete('vf_ctx')
   return res
 }
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get('code')
-  const token_hash = searchParams.get('token_hash')
-  const type = searchParams.get('type')
+  const code        = searchParams.get('code')
+  const token_hash  = searchParams.get('token_hash')
+  const type        = searchParams.get('type')
   const inviteToken = searchParams.get('invite_token')
-  const next = searchParams.get('next') ?? '/dashboard'
+  const isVendor    = searchParams.get('vendor') === '1'
+  const next        = searchParams.get('next') ?? '/dashboard'
 
   const supabase = await createClient()
 
-  // ── PKCE code flow (Supabase invite + standard OAuth) ───────────────────
+  // ── PKCE code exchange ───────────────────────────────────────────────────
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
-
     if (!error) {
-      // If this was an invite, apply the invitation and redirect to set password
-      if (type === 'invite' || inviteToken) {
-        // Apply the invitation in the background
-        if (inviteToken) {
-          await applyInvitation(supabase, inviteToken)
-        } else {
-          // Try to apply by email if no token in URL
-          await applyInvitationByEmail(supabase)
-        }
-        // Always send invited users to set their password first
-        return NextResponse.redirect(`${origin}/reset-password?invited=1`)
-      }
-      return await redirectAfterAuth(supabase, origin, next)
+      return handlePostAuth(supabase, origin, { type, inviteToken, isVendor, next })
+    }
+    console.error('[callback] PKCE error:', error.message)
+
+    // Check if there's already a valid session (link opened in different tab)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      return handlePostAuth(supabase, origin, { type, inviteToken, isVendor, next })
     }
 
-    console.error('[auth/callback] exchangeCodeForSession error:', error.message)
+    // Distinguish invite links from signup confirmation links
+    // Invite links: type=invite or invite_token present — show password setup page
+    // Signup links: show friendly resend page
+    const isInviteLink = type === 'invite' || !!inviteToken
+
+    if (isInviteLink) {
+      // Invite PKCE mismatch — employee needs to set password via reset flow
+      // Send them to reset-password with a hint, OR redirect to company login
+      // with a message to use the "forgot password" flow
+      return NextResponse.redirect(
+        `${origin}/company/login?error=invite_expired&hint=Your+invite+link+has+expired.+Please+ask+your+admin+to+resend+the+invitation.`
+      )
+    }
+
+    const emailParam = searchParams.get('email') ?? ''
+    return NextResponse.redirect(
+      `${origin}/verify-email?expired=1${emailParam ? `&email=${encodeURIComponent(emailParam)}` : ''}`
+    )
   }
 
-  // ── Token hash flow (email OTP / magic link via email) ──────────────────
+  // ── OTP / token hash flow ───────────────────────────────────────────────
   if (token_hash && type) {
-    const { error } = await supabase.auth.verifyOtp({ token_hash, type: type as 'email' | 'recovery' | 'invite' | 'signup' | 'magiclink' | 'sms' | 'phone_change' | 'email_change' })
-
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash,
+      type: type as 'signup' | 'recovery' | 'invite' | 'email',
+    })
     if (!error) {
-      if (type === 'invite') {
-        if (inviteToken) await applyInvitation(supabase, inviteToken)
-        else await applyInvitationByEmail(supabase)
-        return NextResponse.redirect(`${origin}/reset-password?invited=1`)
-      }
-      if (type === 'recovery') {
-        return NextResponse.redirect(`${origin}/reset-password`)
-      }
-      return await redirectAfterAuth(supabase, origin, next)
+      return handlePostAuth(supabase, origin, { type, inviteToken, isVendor, next })
     }
-
-    console.error('[auth/callback] verifyOtp error:', error.message)
-    // Specific error pages for expired links
+    console.error('[callback] OTP error:', error.message)
+    if (type === 'invite') {
+      // Invite link expired — show specific message, not generic "confirmation expired"
+      return NextResponse.redirect(
+        `${origin}/company/login?error=invite_expired&hint=Your+invite+link+has+expired.+Ask+your+admin+to+resend+the+invitation.`
+      )
+    }
     if (error.message?.toLowerCase().includes('expired') || error.message?.toLowerCase().includes('invalid')) {
-      return NextResponse.redirect(`${origin}/invite/expired`)
+      const emailParam = searchParams.get('email') ?? ''
+      return NextResponse.redirect(`${origin}/verify-email?expired=1${emailParam ? `&email=${encodeURIComponent(emailParam)}` : ''}`)
     }
   }
 
-  // ── Fallback — redirect to login with error ─────────────────────────────
-  return NextResponse.redirect(`${origin}/company/login?error=auth_callback_failed`)
-}
-
-/** Apply invitation from a specific token */
-async function applyInvitation(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  inviteToken: string,
-) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    // Use admin client to bypass RLS — employee has no company_id yet
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const adminDb = createAdminClient() as any
-
-    const { data: invitation } = await adminDb
-      .from('employee_invitations')
-      .select('*')
-      .eq('token', inviteToken)
-      .is('accepted_at', null)
-      .limit(1)
-      .maybeSingle()
-
-    if (!invitation) {
-      console.warn('[auth/callback] No pending invitation found for token:', inviteToken)
-      return
-    }
-    await linkUserToInvitation(adminDb, user, invitation)
-  } catch (e) {
-    console.error('[auth/callback] applyInvitation error:', e)
-  }
-}
-
-/** Apply invitation by looking up the user's email */
-async function applyInvitationByEmail(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user?.email) return
-
-    // Use admin client to bypass RLS
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const adminDb = createAdminClient() as any
-
-    const { data: invitation } = await adminDb
-      .from('employee_invitations')
-      .select('*')
-      .eq('email', user.email)
-      .is('accepted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (!invitation) return
-    await linkUserToInvitation(adminDb, user, invitation)
-  } catch (e) {
-    console.error('[auth/callback] applyInvitationByEmail error:', e)
-  }
-}
-
-/** Link authenticated user to their invitation record using admin client */
-async function linkUserToInvitation(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  adminDb: any,
-  user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
-  invitation: {
-    id: string; company_id: string; role_slug: string
-    department: string | null; designation: string | null; full_name: string | null
-    token: string
-  },
-) {
-  const userData = {
-    id:          user.id,
-    company_id:  invitation.company_id,
-    role:        invitation.role_slug,
-    department:  invitation.department ?? null,
-    designation: invitation.designation ?? null,
-    full_name:   invitation.full_name
-                  ?? (user.user_metadata?.full_name as string | undefined)
-                  ?? user.email?.split('@')[0]
-                  ?? null,
-    email:       user.email,
-    status:      'active',
-    portal_type: 'company',
-    updated_at:  new Date().toISOString(),
+  // ── Final fallback — check for existing session ─────────────────────────
+  const { data: { user } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }))
+  if (user) {
+    return handlePostAuth(supabase, origin, { type: null, inviteToken: null, isVendor, next })
   }
 
-  const { error } = await adminDb
-    .from('users')
-    .upsert(userData, { onConflict: 'id' })
-
-  if (error) {
-    console.error('[auth/callback] linkUserToInvitation upsert error:', error)
-    return
-  }
-
-  await adminDb
-    .from('employee_invitations')
-    .update({ accepted_at: new Date().toISOString() })
-    .eq('id', invitation.id)
-
-  console.log(`[auth/callback] Linked ${user.email} → company ${invitation.company_id} as ${invitation.role_slug}`)
+  // No session and no valid code — show helpful page
+  const emailParam = searchParams.get('email') ?? ''
+  return NextResponse.redirect(`${origin}/verify-email?expired=1${emailParam ? `&email=${encodeURIComponent(emailParam)}` : ''}`)
 }
 
-async function redirectAfterAuth(
+async function handlePostAuth(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   origin: string,
-  next: string,
-) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.redirect(`${origin}/company/login?error=no_session`)
-    }
+  opts: { type: string | null; inviteToken: string | null; isVendor: boolean; next: string },
+): Promise<NextResponse> {
+  const { type, inviteToken, isVendor, next } = opts
 
-    // ── PRIORITY 1: Company portal check ─────────────────────────────────────
-    // Users table with company_id is the authoritative signal.
-    // If found → company user, full stop, never check vendor tables.
-    const { data: userRow } = await supabase
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.redirect(`${origin}/company/login?error=no_session`)
+
+  // ── Employee invitation ──────────────────────────────────────────────────
+  if (type === 'invite' || inviteToken) {
+    if (inviteToken) await applyInvitation(inviteToken, user, origin)
+    else await applyInvitationByEmail(user.email, user, origin)
+    const res = NextResponse.redirect(`${origin}/reset-password?invited=1`)
+    return withPortalCookie(res, 'company')
+  }
+
+  // ── Password recovery ────────────────────────────────────────────────────
+  if (type === 'recovery') {
+    return NextResponse.redirect(`${origin}/reset-password`)
+  }
+
+  // ── Vendor flow ──────────────────────────────────────────────────────────
+  if (isVendor || user.user_metadata?.is_vendor === true) {
+    return handleVendorAuth(user.id, origin)
+  }
+
+  // ── Company flow ─────────────────────────────────────────────────────────
+  return handleCompanyAuth(supabase, user.id, origin, next)
+}
+
+async function handleVendorAuth(userId: string, origin: string): Promise<NextResponse> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const admin = createAdminClient() as any
+    const [{ data: vc }, { data: vu }] = await Promise.all([
+      admin.from('vendor_companies').select('id').eq('user_id', userId).maybeSingle(),
+      admin.from('vendor_users').select('id').eq('user_id', userId).maybeSingle(),
+    ])
+    const dest = (vc || vu) ? '/vendor/dashboard' : '/vendor/complete-profile'
+    const res = NextResponse.redirect(`${origin}${dest}`)
+    return withPortalCookie(res, 'vendor')
+  } catch {
+    return NextResponse.redirect(`${origin}/vendor/login`)
+  }
+}
+
+async function handleCompanyAuth(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  origin: string,
+  next: string,
+): Promise<NextResponse> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const admin = createAdminClient() as any
+
+    // Check if user has a company row
+    const { data: userRow } = await admin
       .from('users')
-      .select('company_id')
-      .eq('id', user.id)
+      .select('company_id, role')
+      .eq('id', userId)
       .maybeSingle()
 
-    const companyId = (userRow as { company_id: string | null } | null)?.company_id
+    const companyId = userRow?.company_id
 
     if (companyId) {
-      // Get user role to determine if workspace setup is needed
-      const { data: fullUserRow } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle()
-      const role = (fullUserRow as { role: string } | null)?.role ?? 'viewer'
+      const role = userRow?.role ?? 'viewer'
       const isAdmin = role === 'administrator' || role === 'admin'
-
-      // Only administrators need to complete workspace setup.
-      // Employees go straight to their dashboard.
       if (isAdmin) {
-        const { data: company } = await supabase
+        const { data: company } = await admin
           .from('companies')
           .select('setup_complete')
           .eq('id', companyId)
           .maybeSingle()
-
-        if (!(company as { setup_complete: boolean } | null)?.setup_complete) {
+        if (!company?.setup_complete) {
           const res = NextResponse.redirect(`${origin}/workspace/setup`)
           return withPortalCookie(res, 'company')
         }
       }
-
-      const dest = next && next !== '/' ? next : '/dashboard'
+      const dest = next && next !== '/' && !next.startsWith('/vendor') ? next : '/dashboard'
       const res = NextResponse.redirect(`${origin}${dest}`)
       return withPortalCookie(res, 'company')
     }
 
-    // ── PRIORITY 2: Vendor portal check ──────────────────────────────────────
-    const { data: vendorCompany } = await supabase
-      .from('vendor_companies')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (vendorCompany) {
-      const res = NextResponse.redirect(`${origin}/vendor/dashboard`)
-      return withPortalCookie(res, 'vendor')
-    }
-
-    const { data: vendorUser } = await supabase
-      .from('vendor_users')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (vendorUser) {
-      const res = NextResponse.redirect(`${origin}/vendor/dashboard`)
-      return withPortalCookie(res, 'vendor')
-    }
-
-    // ── PRIORITY 3: New user — send to workspace setup ────────────────────────
+    // No company row — new admin, needs workspace setup
     const res = NextResponse.redirect(`${origin}/workspace/setup`)
     return withPortalCookie(res, 'company')
 
   } catch (err) {
-    console.error('[auth/callback] redirectAfterAuth error:', err)
+    console.error('[callback] handleCompanyAuth error:', err)
+    return NextResponse.redirect(`${origin}/workspace/setup`)
   }
+}
 
-  return NextResponse.redirect(`${origin}/company/login`)
+async function applyInvitation(
+  token: string,
+  user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
+  _origin: string,
+) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const admin = createAdminClient() as any
+    const { data: inv } = await admin
+      .from('employee_invitations')
+      .select('*')
+      .eq('token', token)
+      .is('accepted_at', null)
+      .maybeSingle()
+    if (inv) await linkUserToInvitation(admin, user, inv)
+  } catch (e) { console.error('[callback] applyInvitation:', e) }
+}
+
+async function applyInvitationByEmail(
+  email: string | null | undefined,
+  user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
+  _origin: string,
+) {
+  if (!email) return
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const admin = createAdminClient() as any
+    const { data: inv } = await admin
+      .from('employee_invitations')
+      .select('*')
+      .eq('email', email)
+      .is('accepted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (inv) await linkUserToInvitation(admin, user, inv)
+  } catch (e) { console.error('[callback] applyInvitationByEmail:', e) }
+}
+
+async function linkUserToInvitation(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
+  inv: { id: string; company_id: string; role_slug: string; department: string | null; designation: string | null; full_name: string | null },
+) {
+  const { error } = await admin.from('users').upsert({
+    id:          user.id,
+    company_id:  inv.company_id,
+    role:        inv.role_slug,
+    department:  inv.department ?? null,
+    designation: inv.designation ?? null,
+    full_name:   inv.full_name ?? (user.user_metadata?.full_name as string) ?? user.email?.split('@')[0] ?? null,
+    email:       user.email,
+    status:      'active',
+    updated_at:  new Date().toISOString(),
+  }, { onConflict: 'id' })
+
+  if (error) { console.error('[callback] linkUserToInvitation:', error); return }
+
+  await admin.from('employee_invitations')
+    .update({ accepted_at: new Date().toISOString() })
+    .eq('id', inv.id)
+
+  console.log(`[callback] Linked ${user.email} → ${inv.company_id} as ${inv.role_slug}`)
 }

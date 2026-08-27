@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -11,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
-import { completeInvitationAction } from '@/app/invite/actions'
 
 const schema = z
   .object({
@@ -31,66 +29,64 @@ interface Props {
 }
 
 export function AcceptInviteForm({ token, email, fullName }: Props) {
-  const router = useRouter()
   const [showPw, setShowPw] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<Values>({ resolver: zodResolver(schema) })
+  const { register, handleSubmit, formState: { errors } } =
+    useForm<Values>({ resolver: zodResolver(schema) })
 
   function onSubmit(values: Values) {
     setError(null)
     startTransition(async () => {
       try {
-        const supabase = createClient()
-
-        // Try to sign up with this email + password
-        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-          email,
-          password: values.password,
-          options: {
-            data: { full_name: fullName ?? '' },
-            emailRedirectTo: `${window.location.origin}/auth/callback?invite_token=${token}`,
-          },
+        // Step 1: Create/confirm the account via our server API
+        // This uses the admin client to create the user with email pre-confirmed
+        // so no additional email verification is needed
+        const res = await fetch('/api/auth/accept-invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token,
+            email,
+            password: values.password,
+            fullName: fullName ?? '',
+          }),
         })
 
-        if (signUpErr) {
-          // User might already exist — try signing in instead
-          if (signUpErr.message.toLowerCase().includes('already registered')) {
-            const { error: signInErr } = await supabase.auth.signInWithPassword({
-              email,
-              password: values.password,
-            })
-            if (signInErr) throw new Error('This email is already registered. Try signing in with your existing password.')
+        const data = await res.json()
 
-            // Signed in — now complete the invitation server-side
-            await completeInvitationAction(token)
-            document.cookie = 'vf_portal=company; path=/; max-age=604800; SameSite=Lax'
-            document.cookie = 'vf_ctx=; path=/; max-age=0'
-            toast.success('Invitation accepted! Welcome to VendorFlow.')
-            window.location.href = '/dashboard'
-            return
+        if (!res.ok) {
+          setError(data.error ?? 'Failed to create account. Please try again.')
+          return
+        }
+
+        // Step 2: Sign in with the new credentials
+        const supabase = createClient()
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email,
+          password: values.password,
+        })
+
+        if (signInErr) {
+          setError('Account created but sign-in failed. Please go to the login page.')
+          return
+        }
+
+        // Step 3: Set company portal cookie (retry once in case of race condition
+        // between DB trigger writing the users row and this API call)
+        try {
+          let portalRes = await fetch('/api/auth/set-company-portal', { method: 'POST' })
+          if (!portalRes.ok) {
+            // Brief wait then retry — DB trigger may not have fired yet
+            await new Promise(r => setTimeout(r, 800))
+            portalRes = await fetch('/api/auth/set-company-portal', { method: 'POST' })
           }
-          throw signUpErr
-        }
+        } catch { /* non-critical */ }
 
-        // If email confirmation is disabled in Supabase (recommended for invites),
-        // the user is immediately active. Complete invitation server-side.
-        if (signUpData.session) {
-          await completeInvitationAction(token)
-          document.cookie = 'vf_portal=company; path=/; max-age=604800; SameSite=Lax'
-          document.cookie = 'vf_ctx=; path=/; max-age=0'
-          toast.success('Account created! Welcome to VendorFlow.')
-          window.location.href = '/dashboard'
-        } else {
-          // Email confirmation required — tell user to check email
-          toast.success('Check your email for a confirmation link, then sign in.')
-          router.push('/company/login?invited=1')
-        }
+        toast.success('Account created! Welcome to VendorFlow.')
+        window.location.href = '/dashboard'
+
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to create account')
       }
@@ -147,10 +143,7 @@ export function AcceptInviteForm({ token, email, fullName }: Props) {
 
       <Button type="submit" disabled={isPending} className="w-full mt-2">
         {isPending ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            Creating account…
-          </>
+          <><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating account…</>
         ) : (
           'Create Account & Join'
         )}

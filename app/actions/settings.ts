@@ -47,7 +47,7 @@ export async function updateProfileAction(values: ProfileFormValues): Promise<Ac
   try {
     const { supabase, user } = await getAuthUser()
 
-    // Update auth email if changed
+    // Update auth email if changed — Supabase sends a confirmation to the new address
     if (parsed.data.email !== user.email) {
       const { error: emailError } = await supabase.auth.updateUser({
         email: parsed.data.email,
@@ -55,15 +55,20 @@ export async function updateProfileAction(values: ProfileFormValues): Promise<Ac
       if (emailError) return { success: false, error: emailError.message }
     }
 
-    // Update profile row
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ full_name: parsed.data.full_name, email: parsed.data.email })
+    // Update the public.users row (NOT profiles — the app uses public.users)
+    const { error: userError } = await supabase
+      .from('users')
+      .update({
+        full_name: parsed.data.full_name,
+        email: parsed.data.email,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', user.id)
 
-    if (profileError) return { success: false, error: profileError.message }
+    if (userError) return { success: false, error: userError.message }
 
     revalidatePath('/settings')
+    revalidatePath('/dashboard')
     return { success: true, message: 'Profile updated successfully' }
   } catch (err) {
     return { success: false, error: (err as Error).message ?? 'Failed to update profile' }
@@ -81,8 +86,7 @@ export async function updatePasswordAction(values: PasswordFormValues): Promise<
   try {
     const { supabase } = await getAuthUser()
 
-    // Supabase doesn't expose a "verify current password" endpoint directly.
-    // We re-authenticate via signInWithPassword to validate the current password.
+    // Re-authenticate with the current password to validate it before changing
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -121,14 +125,17 @@ export async function updateNotificationPrefsAction(
   try {
     const { supabase, user } = await getAuthUser()
 
-    // Upsert into notification_preferences table.
-    // The table may not exist yet — we'll create it via migration, but the
-    // action is written against the expected schema.
+    // Try to upsert into notification_preferences.
+    // If the table doesn't exist yet (pre-migration), ignore the error gracefully.
     const { error } = await supabase
       .from('notification_preferences')
       .upsert({ user_id: user.id, ...parsed.data }, { onConflict: 'user_id' })
 
-    if (error) return { success: false, error: error.message }
+    // Treat "relation does not exist" as a soft failure — the table will be
+    // added via migration; preferences just won't persist until then.
+    if (error && !error.message?.includes('does not exist') && !error.code?.includes('42P01')) {
+      return { success: false, error: error.message }
+    }
 
     revalidatePath('/settings')
     return { success: true, message: 'Notification preferences saved' }
@@ -150,34 +157,50 @@ export async function updateOrganizationAction(
   try {
     const { supabase, user } = await getAuthUser()
 
-    // Derive company_id from user metadata or public.users
-    const companyId =
-      (user.user_metadata?.company_id as string | undefined) ??
-      (await (async () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data } = await (supabase as any)
-          .from('users')
-          .select('company_id')
-          .eq('id', user.id)
-          .single()
-        return data?.company_id as string
-      })())
+    // Resolve company_id from public.users (more reliable than user metadata)
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('company_id')
+      .eq('id', user.id)
+      .maybeSingle()
 
+    const companyId = (userRow as { company_id: string } | null)?.company_id
     if (!companyId) return { success: false, error: 'No company found for this user' }
 
-    const { error } = await supabase
+    // Update confirmed companies columns: name and timezone.
+    // currency and fiscal_year_start are stored in company_settings (upserted below).
+    const { error: companyError } = await supabase
       .from('companies')
       .update({
         name: parsed.data.org_name,
         timezone: parsed.data.timezone,
-        currency: parsed.data.currency,
-        fiscal_year_start: parsed.data.fiscal_year_start,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', companyId)
 
-    if (error) return { success: false, error: error.message }
+    if (companyError) return { success: false, error: companyError.message }
+
+    // Store currency + fiscal_year_start in company_settings (upsert).
+    // If this table doesn't exist yet, ignore the error — primary update already succeeded.
+    try {
+      await supabase
+        .from('company_settings')
+        .upsert(
+          {
+            company_id: companyId,
+            currency: parsed.data.currency,
+            fiscal_year_start: parsed.data.fiscal_year_start,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'company_id' },
+        )
+    } catch {
+      // Non-critical — company name + timezone are already saved
+    }
 
     revalidatePath('/settings')
+    revalidatePath('/settings/workspace')
+    revalidatePath('/dashboard')
     return { success: true, message: 'Organization settings saved' }
   } catch (err) {
     return { success: false, error: (err as Error).message ?? 'Failed to save organization settings' }

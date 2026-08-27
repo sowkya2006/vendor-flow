@@ -405,6 +405,21 @@ async function sendEmail(to: string, subject: string, text: string, ctaUrl?: str
 // ─────────────────────────────────────────────────────────────────────────────
 // Main engine entry point
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Public alias for sendEmail — used by approvals.ts and other modules
+ * that need to send email directly without going through the event matrix.
+ */
+export async function sendApprovalEmail(
+  to: string,
+  subject: string,
+  body: string,
+  ctaUrl?: string,
+  recipientName?: string,
+): Promise<void> {
+  const personalizedBody = recipientName ? `Hello ${recipientName},\n\n${body}` : body
+  return sendEmail(to, subject, personalizedBody, ctaUrl, 'Open VendorFlow')
+}
+
 export async function notify(input: NotifyInput): Promise<void> {
   try {
     const rule = MATRIX[input.event]
@@ -482,6 +497,7 @@ export async function notify(input: NotifyInput): Promise<void> {
 
 /**
  * Convenience wrapper — notify by roles directly (for custom scenarios)
+ * Sends both in-app notifications AND emails to all matched users.
  */
 export async function notifyRoles(
   companyId: string,
@@ -493,6 +509,9 @@ export async function notifyRoles(
     link?: string
     entityType?: string
     entityId?: string
+    emailSubject?: string
+    emailBody?: string
+    sendEmail?: boolean
   },
 ): Promise<void> {
   try {
@@ -500,27 +519,44 @@ export async function notifyRoles(
     const db = createAdminClient() as any
     const { data: users } = await db
       .from('users')
-      .select('id')
+      .select('id, email')
       .eq('company_id', companyId)
       .in('role', roles)
       .eq('status', 'active')
 
     if (!users?.length) return
 
-    const rows = (users as { id: string }[]).map((u) => ({
-      company_id:  companyId,
+    const recipients = users as { id: string; email: string | null }[]
+
+    const rows = recipients.map((u) => ({
+      company_id:   companyId,
       recipient_id: u.id,
-      request_id:  null,
-      type:        notification.type,
-      title:       notification.title,
-      body:        notification.body,
-      link:        notification.link ?? null,
-      entity_type: notification.entityType ?? null,
-      entity_id:   notification.entityId ?? null,
-      is_read:     false,
+      request_id:   null,
+      type:         notification.type,
+      title:        notification.title,
+      body:         notification.body,
+      link:         notification.link ?? null,
+      entity_type:  notification.entityType ?? null,
+      entity_id:    notification.entityId ?? null,
+      is_read:      false,
+      sent_at:      new Date().toISOString(),
     }))
 
     await db.from('approval_notifications').insert(rows)
+
+    // Send email unless explicitly disabled
+    if (notification.sendEmail !== false) {
+      const subject = notification.emailSubject ?? notification.title
+      const text    = notification.emailBody ?? notification.body
+      const ctaUrl  = notification.link
+        ? `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}${notification.link}`
+        : undefined
+      await Promise.allSettled(
+        recipients
+          .filter((u) => u.email)
+          .map((u) => sendEmail(u.email!, subject, text, ctaUrl, 'Open VendorFlow'))
+      )
+    }
   } catch {
     // Silent
   }
@@ -609,6 +645,38 @@ export async function notifyVendor(
     }))
 
     await db.from('approval_notifications').insert(rows)
+
+    // Send email to vendor users
+    // Collect emails from vendor_users and vendor_companies tables
+    const emailSet = new Set<string>()
+
+    const { data: vuEmailRows } = await db
+      .from('vendor_users')
+      .select('email')
+      .eq('vendor_id', vendorId)
+    for (const r of (vuEmailRows ?? []) as { email: string | null }[]) {
+      if (r.email) emailSet.add(r.email)
+    }
+
+    // Also collect from auth.users for the resolved userIds (most reliable)
+    if (userIds.size > 0) {
+      const { data: authRows } = await db.auth.admin.listUsers()
+      const authUsers = (authRows?.users ?? []) as { id: string; email?: string }[]
+      for (const au of authUsers) {
+        if (userIds.has(au.id) && au.email) emailSet.add(au.email)
+      }
+    }
+
+    if (emailSet.size > 0 && notification.title) {
+      const ctaUrl = notification.link
+        ? `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}${notification.link}`
+        : undefined
+      await Promise.allSettled(
+        Array.from(emailSet).map((email) =>
+          sendEmail(email, notification.title, notification.body, ctaUrl, 'Open Vendor Portal')
+        )
+      )
+    }
   } catch (err) {
     console.error('[notifyVendor] failed:', err)
   }

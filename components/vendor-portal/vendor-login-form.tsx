@@ -34,10 +34,10 @@ export function VendorLoginForm() {
     try {
       const supabase = createClient()
 
-      // 1. Sign out any existing session (company or otherwise)
+      // 1. Sign out any existing session
       await supabase.auth.signOut()
 
-      // 2. Sign in with vendor credentials
+      // 2. Sign in
       const { error: signInErr } = await supabase.auth.signInWithPassword({
         email:    values.email,
         password: values.password,
@@ -48,44 +48,33 @@ export function VendorLoginForm() {
         return
       }
 
-      // 3. Verify this is actually a vendor account
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setError('Sign in failed. Please try again.'); return }
+      // 3. Ask the server to check vendor records and set the httpOnly portal cookie.
+      //    We use an API route because:
+      //    a) Admin client (service role) is needed to bypass RLS on vendor_companies
+      //    b) httpOnly cookies can only be set from server responses
+      const checkRes = await fetch('/api/auth/check-vendor')
+      const checkData = await checkRes.json()
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = supabase as any
-
-      const [{ data: vc }, { data: vu }] = await Promise.all([
-        db.from('vendor_companies').select('id').eq('user_id', user.id).maybeSingle(),
-        db.from('vendor_users').select('id').eq('user_id', user.id).maybeSingle(),
-      ])
-
-      if (!vc && !vu) {
-        // Check if it's a company account
-        const { data: companyRow } = await db
-          .from('users').select('company_id').eq('id', user.id).maybeSingle()
-
-        await supabase.auth.signOut()
-
-        if (companyRow?.company_id) {
-          setError('This email belongs to a company account. Please use the Company Portal.')
-        } else {
-          // New vendor — send to registration
-          document.cookie = 'vf_portal=vendor; path=/; max-age=604800; SameSite=Lax'
-          document.cookie = 'vf_ctx=; path=/; max-age=0'
-          window.location.href = '/vendor/register'
-        }
+      if (checkData.portal === 'vendor') {
+        // Cookie already set by the API route
+        // Check if vendor profile is complete
+        const profileRes = await fetch('/api/auth/check-vendor-profile')
+        const profileData = await profileRes.json()
+        window.location.href = profileData.hasProfile ? '/vendor/dashboard' : '/vendor/complete-profile'
         return
       }
 
-      // 4. Set the portal cookie — tells the middleware this is a vendor session
-      // This cookie is the primary routing signal. It persists for 7 days.
-      document.cookie = 'vf_portal=vendor; path=/; max-age=604800; SameSite=Lax'
-      // Also delete any stale vf_ctx
-      document.cookie = 'vf_ctx=; path=/; max-age=0'
+      if (checkData.portal === 'company') {
+        await supabase.auth.signOut()
+        setError('This email belongs to a company account. Please use the Company Portal.')
+        return
+      }
 
-      // 5. Hard redirect to vendor portal
-      window.location.href = '/vendor/dashboard'
+      // No vendor record found — might be a new user
+      await supabase.auth.signOut()
+      document.cookie = 'vf_portal=; path=/; max-age=0; SameSite=Lax'
+      document.cookie = 'vf_ctx=; path=/; max-age=0; SameSite=Lax'
+      window.location.href = '/vendor/register'
 
     } finally {
       setIsLoading(false)

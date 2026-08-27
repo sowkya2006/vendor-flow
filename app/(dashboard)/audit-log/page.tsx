@@ -7,13 +7,14 @@
  */
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import Link from 'next/link'
 import { ShieldCheck, FileText, ShoppingCart, FileSearch, ClipboardList, CreditCard, Building2, Users, Package, Bell } from 'lucide-react'
 import { PageContainer } from '@/components/shared/page-container'
 import { WorkspaceHeader } from '@/components/layout/workspace-header'
 import { Skeleton } from '@/components/shared/loading-states'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
 import { createClient } from '@/lib/supabase/server'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 export const metadata: Metadata = { title: 'Audit Log — VendorFlow' }
@@ -181,9 +182,9 @@ function ActivityRow({ item }: { item: ActivityItem }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="text-sm font-medium text-[--color-foreground]">{item.action}</span>
-          <a href={item.entity_link} className="text-sm text-[--color-primary] hover:underline font-medium">
+          <Link href={item.entity_link} className="text-sm text-[--color-primary] hover:underline font-medium">
             {item.entity_ref}
-          </a>
+          </Link>
           {item.actor && (
             <span className="text-xs text-[--color-foreground-muted]">· {item.actor}</span>
           )}
@@ -199,7 +200,7 @@ function ActivityRow({ item }: { item: ActivityItem }) {
           )}
           {item.amount != null && item.amount > 0 && (
             <span className="text-xs text-[--color-foreground-muted]">
-              ₹{item.amount.toLocaleString('en-IN')}
+              {formatCurrency(item.amount)}
             </span>
           )}
         </div>
@@ -229,7 +230,7 @@ async function AuditContent({ companyId, module: filterModule }: { companyId: st
           const count = m === 'All' ? allItems.length : allItems.filter((i) => i.module === m).length
           const active = (filterModule === m) || (m === 'All' && (!filterModule || filterModule === 'All'))
           return (
-            <a
+            <Link
               key={m}
               href={`/audit-log?module=${m}`}
               className={cn(
@@ -243,7 +244,7 @@ async function AuditContent({ companyId, module: filterModule }: { companyId: st
               <span className={cn('rounded-full px-1.5 py-0.5 text-[9px] font-bold', active ? 'bg-white/20 text-white' : 'bg-[--color-muted] text-[--color-foreground-muted]')}>
                 {count}
               </span>
-            </a>
+            </Link>
           )
         })}
       </div>

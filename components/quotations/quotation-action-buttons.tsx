@@ -19,12 +19,20 @@ import type { QuotationStatus } from '@/types/quotation'
 interface QuotationActionButtonsProps {
   quotationId: string
   status: QuotationStatus
+  role?: string
 }
 
-export function QuotationActionButtons({ quotationId, status }: QuotationActionButtonsProps) {
+export function QuotationActionButtons({ quotationId, status, role = 'viewer' }: QuotationActionButtonsProps) {
   const [isPending, startTransition] = useTransition()
   const [rejectOpen, setRejectOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+
+  // Procurement Manager can approve/reject/shortlist but cannot submit or reopen.
+  // Only the creator (Procurement Officer / Admin) can submit / reopen quotations.
+  const isPM = role === 'procurement_manager'
+  const isAdmin = role === 'administrator' || role === 'admin'
+  const canSubmit  = !isPM   // PO, Admin can submit
+  const canApprove = isPM || isAdmin  // PM and Admin can approve/reject/shortlist
 
   function run(action: () => Promise<void>) {
     startTransition(async () => {
@@ -47,8 +55,8 @@ export function QuotationActionButtons({ quotationId, status }: QuotationActionB
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {/* Draft → Submit */}
-      {status === 'draft' && (
+      {/* Draft → Submit — only officers/admin, not PM */}
+      {status === 'draft' && canSubmit && (
         <Button
           size="sm"
           disabled={isPending}
@@ -59,8 +67,8 @@ export function QuotationActionButtons({ quotationId, status }: QuotationActionB
         </Button>
       )}
 
-      {/* Submitted → Under Review */}
-      {status === 'submitted' && (
+      {/* Submitted → Under Review — PM and Admin can start review */}
+      {status === 'submitted' && canApprove && (
         <Button
           size="sm"
           variant="outline"
@@ -72,8 +80,8 @@ export function QuotationActionButtons({ quotationId, status }: QuotationActionB
         </Button>
       )}
 
-      {/* Under Review / Submitted → Shortlist */}
-      {(status === 'submitted' || status === 'under_review') && (
+      {/* Under Review / Submitted → Shortlist — PM and Admin */}
+      {(status === 'submitted' || status === 'under_review') && canApprove && (
         <Button
           size="sm"
           variant="outline"
@@ -86,8 +94,8 @@ export function QuotationActionButtons({ quotationId, status }: QuotationActionB
         </Button>
       )}
 
-      {/* Shortlisted / Under Review → Approve */}
-      {(status === 'shortlisted' || status === 'under_review' || status === 'submitted') && (
+      {/* Shortlisted / Under Review → Approve — PM and Admin */}
+      {(status === 'shortlisted' || status === 'under_review' || status === 'submitted') && canApprove && (
         <Button
           size="sm"
           disabled={isPending}
@@ -99,8 +107,8 @@ export function QuotationActionButtons({ quotationId, status }: QuotationActionB
         </Button>
       )}
 
-      {/* Submitted / Under Review / Shortlisted → Reject */}
-      {['submitted', 'under_review', 'shortlisted'].includes(status) && !rejectOpen && (
+      {/* Submitted / Under Review / Shortlisted → Reject — PM and Admin */}
+      {['submitted', 'under_review', 'shortlisted'].includes(status) && canApprove && !rejectOpen && (
         <Button
           size="sm"
           variant="outline"
@@ -113,8 +121,8 @@ export function QuotationActionButtons({ quotationId, status }: QuotationActionB
         </Button>
       )}
 
-      {/* Rejected / Expired → Reopen */}
-      {(status === 'rejected' || status === 'expired') && (
+      {/* Rejected / Expired → Reopen — only non-PM */}
+      {(status === 'rejected' || status === 'expired') && !isPM && (
         <Button
           size="sm"
           variant="outline"

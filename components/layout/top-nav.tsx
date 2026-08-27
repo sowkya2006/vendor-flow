@@ -64,28 +64,33 @@ export function TopNav({
 
   // ── Initial load ────────────────────────────────────────────────────────────
   useEffect(() => {
+    let mounted = true
     async function load() {
       try {
         const supabase = createClient()
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-        if (authError || !user) return
-        setUserId(user.id)
+        // Use getSession() first (no network call — reads from cookie)
+        // Only fall back to getUser() if we don't have a user ID from session
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user || !mounted) return
+
+        const uid = session.user.id
+        setUserId(uid)
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data } = await (supabase as any)
           .from('approval_notifications')
           .select('id, request_id, company_id, recipient_id, type, title, body, is_read, read_at, sent_at, created_at, link, entity_type, entity_id')
-          .eq('recipient_id', user.id)
+          .eq('recipient_id', uid)
           .order('created_at', { ascending: false })
           .limit(8)
 
-        setNotifications((data ?? []) as Notification[])
+        if (mounted) setNotifications((data ?? []) as Notification[])
       } catch (err) {
-        // Non-critical — notifications panel will just be empty
         console.warn('[TopNav] Could not load notifications:', err instanceof Error ? err.message : 'fetch error')
       }
     }
     load()
+    return () => { mounted = false }
   }, [])
 
   // ── Realtime subscription ───────────────────────────────────────────────────
@@ -420,9 +425,11 @@ export function TopNav({
                   <p className="text-xs text-[--color-muted-foreground]">{currentUser?.email}</p>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="gap-2 cursor-pointer">
-                  <User className="h-3.5 w-3.5" />
-                  Profile
+                <DropdownMenuItem asChild className="gap-2 cursor-pointer">
+                  <Link href="/settings">
+                    <User className="h-3.5 w-3.5" />
+                    Profile
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild className="gap-2 cursor-pointer">
                   <Link href="/notifications">
@@ -435,9 +442,11 @@ export function TopNav({
                     )}
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="gap-2 cursor-pointer">
-                  <Settings className="h-3.5 w-3.5" />
-                  Account settings
+                <DropdownMenuItem asChild className="gap-2 cursor-pointer">
+                  <Link href="/settings?tab=security">
+                    <Settings className="h-3.5 w-3.5" />
+                    Account settings
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

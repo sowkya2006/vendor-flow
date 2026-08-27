@@ -88,7 +88,10 @@ export default async function QuotationDetailPage({
   }
   if (!quotation) notFound()
 
-  const canEdit = quotation!.status === 'draft' || quotation!.status === 'under_review'
+  const isAdmin    = role === 'administrator' || role === 'admin'
+  const isPM       = role === 'procurement_manager'
+  const canEdit    = (quotation!.status === 'draft' || quotation!.status === 'under_review') && !isPM
+  const canDelete  = isAdmin
   const showCreatePO = quotation!.status === 'approved' && canCreatePO(role!)
 
   const createdAt = quotation!.created_at ? new Date(quotation!.created_at) : null
@@ -135,7 +138,7 @@ export default async function QuotationDetailPage({
                 </Link>
               </Button>
             )}
-            <QuotationDeleteButton quotationId={quotation!.id} />
+            {canDelete && <QuotationDeleteButton quotationId={quotation!.id} />}
           </div>
         }
       />
@@ -151,7 +154,7 @@ export default async function QuotationDetailPage({
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[--color-foreground-muted]">
                 Actions
               </h3>
-              <QuotationActionButtons quotationId={quotation!.id} status={quotation!.status} />
+              <QuotationActionButtons quotationId={quotation!.id} status={quotation!.status} role={role!} />
             </div>
 
             {/* Line Items */}

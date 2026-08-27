@@ -267,15 +267,46 @@ export async function createInvitation(
 }
 
 export async function getInvitationByToken(token: string): Promise<Invitation | null> {
-  const supabase = await db()
-  const { data } = await supabase
+  // Use admin client to bypass RLS — the employee is unauthenticated when
+  // they click the invite link, so the regular scoped client returns null
+  // even for valid, unexpired invitations.
+  const { createAdminClient } = await import('@/lib/supabase/admin')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any
+
+  const { data, error } = await admin
     .from('employee_invitations')
     .select('*')
     .eq('token', token)
     .gt('expires_at', new Date().toISOString())
     .is('accepted_at', null)
-    .single()
-  return data as Invitation | null
+    .maybeSingle()
+
+  if (error) {
+    console.error('[getInvitationByToken] error:', error.message)
+    return null
+  }
+
+  if (!data) {
+    // Log why it's null for debugging
+    // Check if token exists at all (ignoring expiry/accepted)
+    const { data: anyInv } = await admin
+      .from('employee_invitations')
+      .select('token, expires_at, accepted_at')
+      .eq('token', token)
+      .maybeSingle()
+
+    if (!anyInv) {
+      console.warn('[getInvitationByToken] Token not found in DB:', token.substring(0, 8) + '...')
+    } else if (anyInv.accepted_at) {
+      console.warn('[getInvitationByToken] Token already accepted:', token.substring(0, 8) + '...')
+    } else {
+      console.warn('[getInvitationByToken] Token expired. expires_at:', anyInv.expires_at)
+    }
+    return null
+  }
+
+  return data as Invitation
 }
 
 export async function acceptInvitation(token: string, userId: string): Promise<void> {

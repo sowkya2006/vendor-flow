@@ -10,14 +10,17 @@ export const metadata: Metadata = {
 }
 
 interface PageProps {
-  searchParams: Promise<{ error?: string; error_code?: string; invited?: string }>
+  searchParams: Promise<{ error?: string; error_code?: string; invited?: string; hint?: string }>
 }
 
 export default async function CompanyLoginPage({ searchParams }: PageProps) {
   const params = await searchParams
   const isExpiredInvite =
     params.error_code === 'otp_expired' ||
-    (params.error === 'access_denied' && params.error_code === 'otp_expired')
+    (params.error === 'access_denied' && params.error_code === 'otp_expired') ||
+    params.error === 'invite_expired'
+
+  const hint = params.hint ? decodeURIComponent(params.hint) : null
 
   return (
     <div className="min-h-screen relative overflow-hidden flex" style={{ background: '#090B11' }}>
@@ -109,7 +112,7 @@ export default async function CompanyLoginPage({ searchParams }: PageProps) {
                 <div>
                   <h2 className="text-xl font-bold text-white">Invitation Expired</h2>
                   <p className="mt-2 text-sm" style={{ color: '#AEB4C2' }}>
-                    This invite link has expired. Ask your admin to resend it from Settings → Employees.
+                    {hint || 'This invite link has expired. Ask your admin to resend it from Settings → Employees.'}
                   </p>
                 </div>
                 <div className="rounded-xl p-3 text-left flex gap-2.5" style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.2)' }}>
