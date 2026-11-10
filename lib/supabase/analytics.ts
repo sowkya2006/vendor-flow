@@ -534,15 +534,16 @@ export async function getFinanceAnalytics(companyId: string): Promise<FinanceAna
   // Aging
   const today = new Date()
   const buckets = [
-    { label: 'Current', min: -Infinity, max: 0 },
-    { label: '1–30 days', min: 1, max: 30 },
-    { label: '31–60 days', min: 31, max: 60 },
-    { label: '61–90 days', min: 61, max: 90 },
-    { label: '90+ days', min: 91, max: Infinity },
+    { label: 'Current',    min: -9999, max: 0 },
+    { label: '1–30 days',  min: 1,     max: 30 },
+    { label: '31–60 days', min: 31,    max: 60 },
+    { label: '61–90 days', min: 61,    max: 90 },
+    { label: '90+ days',   min: 91,    max: 9999 },
   ]
   const aging = buckets.map(({ label, min, max }) => {
     const bucket = invs.filter((inv) => {
-      if (!['approved', 'partially_paid'].includes(inv.status) || !inv.due_date) return label === 'Current' && inv.remaining_amount > 0
+      if (!['approved', 'partially_paid'].includes(inv.status)) return false
+      if (!inv.due_date) return min <= 0 && max >= 0  // no due date → Current
       const days = Math.floor((today.getTime() - new Date(inv.due_date).getTime()) / 86400000)
       return days >= min && days <= max
     })

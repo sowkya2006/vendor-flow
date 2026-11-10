@@ -35,7 +35,7 @@ export function ThreeWayMatchPanel({ invoiceId, invoiceNumber, invoiceTotal, isF
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/debug-invoice?invoice_id=${invoiceId}`)
+    fetch(`/api/invoice-match?invoice_id=${invoiceId}`)
       .then((r) => r.json())
       .then((d) => {
         setData(d as MatchData)
