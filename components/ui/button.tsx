@@ -17,32 +17,32 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: [
-          'bg-gradient-to-br from-[#4F8CFF] to-[#6CA7FF] text-white',
-          'shadow-[0_4px_16px_rgba(79,140,255,0.35)]',
-          'hover:shadow-[0_6px_24px_rgba(79,140,255,0.45)] hover:brightness-110',
+          'bg-gradient-to-br from-[#8B9FE8] to-[#A5B6F0] text-[#0D1225]',
+          'shadow-[0_4px_16px_rgba(139,159,232,0.40)]',
+          'hover:shadow-[0_6px_24px_rgba(139,159,232,0.55)] hover:brightness-110',
         ].join(' '),
         destructive: [
-          'bg-gradient-to-br from-[#EF4444] to-[#f87171] text-white',
-          'shadow-[0_4px_12px_rgba(239,68,68,0.3)]',
-          'hover:shadow-[0_6px_20px_rgba(239,68,68,0.4)] hover:brightness-110',
+          'bg-gradient-to-br from-[#F87171] to-[#FCA5A5] text-white',
+          'shadow-[0_4px_12px_rgba(248,113,113,0.35)]',
+          'hover:shadow-[0_6px_20px_rgba(248,113,113,0.5)] hover:brightness-110',
         ].join(' '),
         outline: [
-          'border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.04)] text-[#E5E7EB]',
+          'border border-[rgba(139,159,232,0.30)] bg-[rgba(139,159,232,0.06)] text-[#D4DAEB]',
           'backdrop-blur-sm',
-          'hover:bg-[rgba(255,255,255,0.08)] hover:border-[rgba(255,255,255,0.22)] hover:text-white',
+          'hover:bg-[rgba(139,159,232,0.12)] hover:border-[rgba(139,159,232,0.50)] hover:text-white',
         ].join(' '),
         secondary: [
-          'bg-[rgba(255,255,255,0.06)] text-[#E5E7EB] border border-[rgba(255,255,255,0.1)]',
-          'hover:bg-[rgba(255,255,255,0.1)] hover:border-[rgba(255,255,255,0.18)]',
+          'bg-[rgba(139,159,232,0.10)] text-[#D4DAEB] border border-[rgba(139,159,232,0.20)]',
+          'hover:bg-[rgba(139,159,232,0.18)] hover:border-[rgba(139,159,232,0.38)] hover:text-white',
         ].join(' '),
         ghost: [
-          'text-[#AEB4C2]',
-          'hover:bg-[rgba(255,255,255,0.06)] hover:text-[#F5F5F5]',
+          'text-[#D4DAEB]',
+          'hover:bg-[rgba(139,159,232,0.10)] hover:text-white',
         ].join(' '),
-        link: 'text-[#4F8CFF] underline-offset-4 hover:underline p-0 h-auto',
+        link: 'text-[#A5B6F0] underline-offset-4 hover:underline hover:text-[#C5D2F8] p-0 h-auto',
         success: [
-          'bg-[rgba(34,197,94,0.15)] text-[#4ade80] border border-[rgba(34,197,94,0.3)]',
-          'hover:bg-[rgba(34,197,94,0.22)]',
+          'bg-[rgba(52,211,153,0.15)] text-[#6EDEB8] border border-[rgba(52,211,153,0.35)]',
+          'hover:bg-[rgba(52,211,153,0.25)] hover:text-[#34D399]',
         ].join(' '),
       },
       size: {
