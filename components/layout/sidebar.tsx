@@ -68,21 +68,21 @@ function SidebarItem({ item, collapsed }: { item: NavItem; collapsed: boolean })
         collapsed && 'justify-center px-0 w-10 mx-auto rounded-xl',
       )}
       style={isActive ? {
-        background: 'rgba(79,140,255,0.15)',
-        border: '1px solid rgba(79,140,255,0.35)',
-        boxShadow: '0 0 12px rgba(79,140,255,0.12), inset 0 1px 0 rgba(255,255,255,0.08)',
-        color: '#93c5fd',
+        background: 'rgba(139,159,232,0.18)',
+        border: '1px solid rgba(139,159,232,0.40)',
+        boxShadow: '0 0 16px rgba(139,159,232,0.15), inset 0 1px 0 rgba(255,255,255,0.08)',
+        color: '#A5B6F0',
       } : undefined}
     >
       {/* Active left glow bar */}
       {isActive && !collapsed && (
-        <span className="absolute left-0 inset-y-2 w-[3px] rounded-r-full" style={{ background: 'linear-gradient(to bottom, #93c5fd, #4F8CFF)' }} />
+        <span className="absolute left-0 inset-y-2 w-[3px] rounded-r-full" style={{ background: 'linear-gradient(to bottom, #C9A84C, #8B9FE8)' }} />
       )}
 
       <NavIcon
         name={item.iconName}
         className={cn('shrink-0 transition-colors')}
-        style={isActive ? { color: '#93c5fd' } : undefined}
+        style={isActive ? { color: '#C9A84C' } : undefined}
       />
 
       <AnimatePresence initial={false}>
@@ -93,7 +93,7 @@ function SidebarItem({ item, collapsed }: { item: NavItem; collapsed: boolean })
             exit={{ opacity: 0, width: 0 }}
             transition={{ duration: 0.16 }}
             className="overflow-hidden whitespace-nowrap flex-1"
-            style={isActive ? { color: '#93c5fd' } : undefined}
+            style={isActive ? { color: '#A5B6F0' } : undefined}
           >
             {item.label}
           </motion.span>
@@ -162,7 +162,7 @@ export function Sidebar({
           )}
         >
           {/* Logo mark */}
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #4F8CFF, #8B5CF6)', boxShadow: '0 2px 12px rgba(79,140,255,0.4)' }}>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #8B9FE8, #C9A84C)', boxShadow: '0 2px 12px rgba(139,159,232,0.5)' }}>
             <Zap className="h-[15px] w-[15px] text-white" />
           </div>
 

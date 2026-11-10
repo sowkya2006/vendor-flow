@@ -49,7 +49,7 @@ export function AppShell({
         <main
           id="main-content"
           className="flex-1 overflow-y-auto"
-          style={{ background: 'var(--main-bg, var(--color-background-subtle))' }}
+          style={{ background: '#080C18' }}
         >
           {/* Preview mode banner */}
           {previewRole && previewRole !== realRole && (

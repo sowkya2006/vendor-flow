@@ -157,11 +157,11 @@ export function TopNav({
         'border-b px-4',
       )}
       style={{
-        background: 'rgba(9,11,17,0.85)',
+        background: 'rgba(7,11,22,0.90)',
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        borderColor: 'rgba(255,255,255,0.08)',
-        boxShadow: '0 1px 0 rgba(255,255,255,0.04)',
+        borderColor: 'rgba(139,159,232,0.18)',
+        boxShadow: '0 1px 0 rgba(139,159,232,0.08)',
       }}
     >
       {/* Mobile sidebar toggle */}
@@ -184,17 +184,17 @@ export function TopNav({
           'w-72',
         )}
         style={{
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          color: '#6B7280',
+          background: 'rgba(139,159,232,0.07)',
+          border: '1px solid rgba(139,159,232,0.18)',
+          color: '#8B96B4',
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
-        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(139,159,232,0.38)'; e.currentTarget.style.background = 'rgba(139,159,232,0.12)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(139,159,232,0.18)'; e.currentTarget.style.background = 'rgba(139,159,232,0.07)' }}
         aria-label="Search"
       >
         <Search className="h-3.5 w-3.5 shrink-0" />
         <span className="flex-1 text-left">Search vendors, RFQs, POs…</span>
-        <kbd className="shrink-0 rounded-lg px-1.5 py-0.5 text-[10px] font-mono" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#6B7280' }}>
+        <kbd className="shrink-0 rounded-lg px-1.5 py-0.5 text-[10px] font-mono" style={{ background: 'rgba(139,159,232,0.08)', border: '1px solid rgba(139,159,232,0.2)', color: '#8B96B4' }}>
           ⌘K
         </kbd>
       </button>
@@ -231,11 +231,11 @@ export function TopNav({
                   transition={{ duration: 0.15 }}
                   className="absolute right-0 z-[9999] mt-2 w-96 rounded-2xl overflow-hidden"
                   style={{
-                    background: 'rgba(17,24,39,0.95)',
+                    background: 'rgba(8,12,30,0.97)',
                     backdropFilter: 'blur(24px)',
                     WebkitBackdropFilter: 'blur(24px)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    boxShadow: '0 16px 48px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(139,159,232,0.25)',
+                    boxShadow: '0 16px 48px rgba(0,0,0,0.7), inset 0 1px 0 rgba(139,159,232,0.08)',
                   }}
                 >
                   {/* Header */}
