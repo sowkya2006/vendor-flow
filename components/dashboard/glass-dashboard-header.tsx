@@ -42,42 +42,42 @@ export async function GlassDashboardHeader() {
     <div
       className="relative rounded-2xl p-6 overflow-hidden mb-6"
       style={{
-        background: 'linear-gradient(135deg, rgba(79,140,255,0.14) 0%, rgba(139,92,246,0.10) 50%, rgba(6,182,212,0.08) 100%)',
+        background: 'linear-gradient(135deg, rgba(139,159,232,0.18) 0%, rgba(100,80,200,0.12) 50%, rgba(201,168,76,0.08) 100%)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
-        border: '1px solid rgba(255,255,255,0.12)',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08)',
+        border: '1px solid rgba(139,159,232,0.28)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(139,159,232,0.15)',
       }}
     >
       {/* Ambient glow blobs */}
-      <div className="absolute -top-8 -right-8 h-40 w-40 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-8 -left-4 h-32 w-32 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
+      <div className="absolute -top-8 -right-8 h-40 w-40 rounded-full blur-3xl pointer-events-none" style={{ background: 'rgba(139,159,232,0.15)' }} />
+      <div className="absolute -bottom-8 -left-4 h-32 w-32 rounded-full blur-3xl pointer-events-none" style={{ background: 'rgba(201,168,76,0.12)' }} />
 
       {/* Top reflection */}
-      <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
+      <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-[rgba(139,159,232,0.4)] to-transparent pointer-events-none" />
 
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1.5">
             <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs font-medium uppercase tracking-widest text-white/40">
-              {month}
-            </span>
+            <span className="text-xs font-medium uppercase tracking-widest" style={{ color: 'rgba(139,159,232,0.8)' }}>
+                {month}
+              </span>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white">
             {getGreeting()}, {name} 👋
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <p className="text-sm text-white/50">
+            <p className="text-sm" style={{ color: '#D4DAEB' }}>
               Here&apos;s your workspace overview.
             </p>
             {role && (
               <span
                 className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize"
                 style={{
-                  background: 'rgba(79,140,255,0.2)',
-                  border: '1px solid rgba(79,140,255,0.4)',
-                  color: '#93c5fd',
+                  background: 'rgba(139,159,232,0.18)',
+                  border: '1px solid rgba(139,159,232,0.38)',
+                  color: '#A5B6F0',
                 }}
               >
                 {role}
@@ -87,9 +87,9 @@ export async function GlassDashboardHeader() {
               <span
                 className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
                 style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  color: 'rgba(255,255,255,0.5)',
+                  background: 'rgba(201,168,76,0.12)',
+                  border: '1px solid rgba(201,168,76,0.28)',
+                  color: '#E8C86A',
                 }}
               >
                 {company}
@@ -101,12 +101,12 @@ export async function GlassDashboardHeader() {
         <div
           className="shrink-0 rounded-xl px-4 py-3 text-center"
           style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'rgba(139,159,232,0.08)',
+            border: '1px solid rgba(139,159,232,0.22)',
           }}
         >
           <p className="text-2xl font-bold text-white tracking-tight">{day.split(',')[1]?.trim()}</p>
-          <p className="text-xs text-white/40 mt-0.5">{day.split(',')[0]}</p>
+          <p className="text-xs mt-0.5" style={{ color: '#8B9FE8' }}>{day.split(',')[0]}</p>
         </div>
       </div>
     </div>

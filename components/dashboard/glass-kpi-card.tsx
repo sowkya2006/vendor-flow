@@ -53,12 +53,12 @@ export function GlassKpiCard({
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         border: `1px solid ${borderColor}`,
-        boxShadow: `0 8px 32px rgba(0,0,0,0.3), 0 0 0 0 ${glowColor}`,
+        boxShadow: `0 4px 24px rgba(0,0,0,0.5), 0 0 0 0 ${glowColor}`,
         animationDelay: `${index * 80}ms`,
       }}
       onMouseEnter={(e) => {
         ;(e.currentTarget as HTMLDivElement).style.boxShadow =
-          `0 16px 48px rgba(0,0,0,0.4), 0 0 40px ${glowColor}`
+          `0 12px 40px rgba(0,0,0,0.6), 0 0 32px ${glowColor}`
       }}
       onMouseLeave={(e) => {
         ;(e.currentTarget as HTMLDivElement).style.boxShadow =
@@ -73,18 +73,19 @@ export function GlassKpiCard({
 
       <div className="relative flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-white/50 uppercase tracking-wider mb-2">{title}</p>
+          <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: '#8B96B4' }}>{title}</p>
           <div className="flex items-baseline gap-1">
-            {isCurrency && <span className="text-lg font-semibold text-white/70">₹</span>}
+            {isCurrency && <span className="text-lg font-semibold" style={{ color: '#D4DAEB' }}>₹</span>}
             <span
               ref={countRef}
-              className="text-3xl font-bold text-white tracking-tight"
+              className="text-3xl font-bold tracking-tight"
+              style={{ color: '#FFFFFF' }}
             >
               0
             </span>
           </div>
           {description && (
-            <p className="mt-1.5 text-xs text-white/40 truncate">{description}</p>
+            <p className="mt-1.5 text-xs truncate" style={{ color: '#8B96B4' }}>{description}</p>
           )}
         </div>
 
