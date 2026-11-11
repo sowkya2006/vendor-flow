@@ -75,20 +75,14 @@ export default async function VendorPortalLayout({ children }: { children: React
   }
 
   return (
-    <div
-      className="flex h-screen overflow-hidden"
-      style={{ background: '#080C18' }}
-    >
+    <div className="flex h-screen overflow-hidden bg-[--color-background]">
       <VendorPortalSidebar vendorUser={vendorUser} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <VendorPortalHeader
           vendorUser={vendorUser}
           companyName={vendorCompanyRow?.company_name ?? vendorUserRow?.vendor?.name ?? null}
         />
-        <main
-          className="flex-1 overflow-y-auto"
-          style={{ background: '#080C18' }}
-        >
+        <main className="flex-1 overflow-y-auto">
           {children}
         </main>
       </div>
