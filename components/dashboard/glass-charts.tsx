@@ -7,13 +7,13 @@ import {
 } from 'recharts'
 
 const GLASS_TOOLTIP_STYLE = {
-  backgroundColor: 'rgba(8,12,30,0.97)',
+  backgroundColor: 'rgba(22,28,53,0.97)',
   backdropFilter: 'blur(16px)',
-  border: '1px solid rgba(139,159,232,0.3)',
+  border: '1px solid rgba(180,190,220,0.25)',
   borderRadius: '12px',
   padding: '10px 14px',
-  boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-  color: '#D4DAEB',
+  boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+  color: '#D0D4E8',
   fontSize: '12px',
 }
 
@@ -32,7 +32,7 @@ export function GlassSpendChart({ data = SPEND_DATA }: { data?: typeof SPEND_DAT
     <div
       className="rounded-2xl p-5"
       style={{
-        background: 'rgba(10,15,38,0.85)',
+        background: 'rgba(22,28,53,0.88)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         border: '1px solid rgba(139,159,232,0.22)',
@@ -87,7 +87,7 @@ export function GlassProcurementDonut({ data = DEFAULT_DONUT }: { data?: DonutIt
     <div
       className="rounded-2xl p-5"
       style={{
-        background: 'rgba(10,15,38,0.85)',
+        background: 'rgba(22,28,53,0.88)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         border: '1px solid rgba(139,159,232,0.22)',
@@ -148,7 +148,7 @@ export function GlassVendorPerformance({ data = DEFAULT_VENDOR }: { data?: Vendo
     <div
       className="rounded-2xl p-5"
       style={{
-        background: 'rgba(10,15,38,0.85)',
+        background: 'rgba(22,28,53,0.88)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         border: '1px solid rgba(139,159,232,0.22)',
@@ -201,7 +201,7 @@ export function GlassInventoryHealth({ data = DEFAULT_INV }: { data?: InvHealthD
     <div
       className="rounded-2xl p-5"
       style={{
-        background: 'rgba(10,15,38,0.85)',
+        background: 'rgba(22,28,53,0.88)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         border: '1px solid rgba(139,159,232,0.22)',
