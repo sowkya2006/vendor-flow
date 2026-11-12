@@ -1081,12 +1081,52 @@ export async function getVendorPOsForInvoice(vendorId: string): Promise<POForInv
 
 export async function getVendorRFQsForQuotation(vendorId: string): Promise<Array<{ id: string; rfq_number: string; title: string }>> {
   const supabase = await db()
+  const admin = await adminDb()
+
+  // Collect all vendor IDs this user might be associated with
+  const vendorIds = new Set<string>([vendorId])
+
+  // Also check vendors linked via vendor_company_id
+  const { data: linkedVendors } = await admin
+    .from('vendors')
+    .select('id')
+    .or(`id.eq.${vendorId},vendor_company_id.eq.${vendorId}`)
+  for (const v of (linkedVendors ?? []) as { id: string }[]) {
+    vendorIds.add(v.id)
+  }
+
+  // Also check if there's a vendors row linked by email
+  const authClient = await createClient()
+  const { data: { user } } = await authClient.auth.getUser()
+  if (user?.email) {
+    const { data: vByEmail } = await admin
+      .from('vendors')
+      .select('id')
+      .eq('email', user.email)
+    for (const v of (vByEmail ?? []) as { id: string }[]) {
+      vendorIds.add(v.id)
+    }
+  }
+
+  const uniqueIds = Array.from(vendorIds)
+
   const { data } = await supabase
     .from('rfqs')
     .select('id, rfq_number, title')
-    .eq('vendor_id', vendorId)
+    .in('vendor_id', uniqueIds)
     .in('status', ['sent', 'under_review'])
     .order('created_at', { ascending: false })
     .limit(100)
-  return (data ?? []) as Array<{ id: string; rfq_number: string; title: string }>
+
+  if (data?.length) return (data ?? []) as Array<{ id: string; rfq_number: string; title: string }>
+
+  // Fallback: admin client in case RLS blocks
+  const { data: data2 } = await admin
+    .from('rfqs')
+    .select('id, rfq_number, title')
+    .in('vendor_id', uniqueIds)
+    .in('status', ['sent', 'under_review'])
+    .order('created_at', { ascending: false })
+    .limit(100)
+  return (data2 ?? []) as Array<{ id: string; rfq_number: string; title: string }>
 }
