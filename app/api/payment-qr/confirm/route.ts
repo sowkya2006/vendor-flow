@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { verifyPaymentToken } from '@/lib/payment-qr'
 
 export async function POST(req: NextRequest) {
   try {
     const { token } = await req.json()
     if (!token) return NextResponse.json({ error: 'Token required' }, { status: 400 })
 
-    const data = verifyPaymentToken(token)
-    if (!data) return NextResponse.json({ error: 'Invalid or expired QR code' }, { status: 401 })
-
-    const { invoiceId, amount, companyId, invoiceNumber } = data
+    // Decode short token
+    let invoiceId: string
+    let companyId: string
+    try {
+      const pad = token.replace(/-/g, '+').replace(/_/g, '/') + '=='.slice((token.length % 4))
+      const decoded = Buffer.from(pad, 'base64').toString('utf8')
+      const data = JSON.parse(decoded)
+      invoiceId = data.i
+      companyId = data.c
+      if (!invoiceId || !companyId) throw new Error('invalid')
+    } catch {
+      return NextResponse.json({ error: 'Invalid or expired QR code' }, { status: 401 })
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const admin = createAdminClient() as any
@@ -26,6 +34,9 @@ export async function POST(req: NextRequest) {
     if (!['approved', 'partially_paid'].includes(invoice.status)) {
       return NextResponse.json({ error: 'Invoice is not awaiting payment' }, { status: 400 })
     }
+
+    const amount = invoice.remaining_amount
+    const invoiceNumber = invoice.invoice_number
 
     // Fan out notification to all finance managers + admins in this company
     const { data: financeUsers } = await admin

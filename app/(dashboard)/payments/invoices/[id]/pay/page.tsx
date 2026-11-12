@@ -6,7 +6,6 @@ import { PaymentFormWithQR } from '@/components/invoices/payment-form-with-qr'
 import { getInvoiceById } from '@/lib/supabase/invoices'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
 import { recordPaymentAction } from '@/app/(dashboard)/payments/actions'
-import { generatePaymentToken } from '@/lib/payment-qr'
 import type { PaymentFormValues } from '@/lib/validations/invoice'
 
 interface PageProps { params: Promise<{ id: string }> }
@@ -22,18 +21,11 @@ export default async function RecordPaymentPage({ params }: PageProps) {
   if (!['approved', 'partially_paid'].includes(invoice.status)) notFound()
   if (invoice.remaining_amount <= 0) notFound()
 
-  // Generate a signed QR token for this payment
-  const qrToken = generatePaymentToken({
-    invoiceId:     invoice.id,
-    invoiceNumber: invoice.invoice_number,
-    vendorName:    invoice.vendor?.name ?? 'Vendor',
-    amount:        invoice.remaining_amount,
-    currency:      invoice.currency ?? 'INR',
-    companyId,
-  })
-
+  // Generate a short scannable QR URL — just encode invoiceId + companyId as a short base64
+  // The confirmation API validates everything server-side using the invoice record
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  const qrUrl  = `${appUrl}/pay/${qrToken}`
+  const shortPayload = Buffer.from(JSON.stringify({ i: invoice.id, c: companyId })).toString('base64url')
+  const qrUrl = `${appUrl}/pay/${shortPayload}`
 
   async function handlePayment(values: PaymentFormValues) {
     'use server'

@@ -40,11 +40,11 @@ export function PaymentFormWithQR({
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null)
   const [loadingQr, setLoadingQr] = useState(true)
 
-  // ── Generate QR image using QR Server API ────────────────────────────────
+  // ── Generate QR image — use a smaller, scannable size ───────────────────
   useEffect(() => {
+    // Use the full qrUrl directly — it's already short (just base64 invoice ID)
     const encoded = encodeURIComponent(qrUrl)
-    // Uses goqr.me free API — no auth needed
-    const url = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encoded}&bgcolor=1a2035&color=ffffff&margin=10`
+    const url = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encoded}&bgcolor=1a2035&color=e2e8f0&margin=8&ecc=M`
     setQrImageUrl(url)
     setLoadingQr(false)
   }, [qrUrl])

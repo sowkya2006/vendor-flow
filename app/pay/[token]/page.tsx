@@ -14,23 +14,34 @@ import { CheckCircle2, Loader2, XCircle, CreditCard, Building2, FileText } from 
 import { Button } from '@/components/ui/button'
 
 interface TokenData {
+  invoiceId: string
   invoiceNumber: string
   vendorName: string
   amount: number
   currency: string
-  invoiceId: string
 }
 
 type Status = 'loading' | 'ready' | 'confirming' | 'success' | 'error' | 'invalid'
 
-function decodeToken(token: string): TokenData | null {
+// Decode the short token: base64url({ i: invoiceId, c: companyId })
+// Then fetch invoice details from the API
+function decodeShortToken(token: string): { invoiceId: string; companyId: string } | null {
   try {
-    const decoded = atob(token.replace(/-/g, '+').replace(/_/g, '/'))
-    const [payload] = decoded.split('.')
-    const data = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
-    return data as TokenData
+    const decoded = Buffer.from(token, 'base64url').toString('utf8')
+    const data = JSON.parse(decoded)
+    if (!data.i || !data.c) return null
+    return { invoiceId: data.i, companyId: data.c }
   } catch {
-    return null
+    // Also try atob for browser
+    try {
+      const pad = token.replace(/-/g, '+').replace(/_/g, '/')
+      const decoded = atob(pad + '=='.slice((pad.length % 4)))
+      const data = JSON.parse(decoded)
+      if (!data.i || !data.c) return null
+      return { invoiceId: data.i, companyId: data.c }
+    } catch {
+      return null
+    }
   }
 }
 
@@ -43,13 +54,20 @@ export default function PayConfirmPage() {
   const [error, setError] = useState<string>('')
 
   useEffect(() => {
-    const decoded = decodeToken(token)
+    const decoded = decodeShortToken(token)
     if (!decoded) {
       setStatus('invalid')
       return
     }
-    setData(decoded)
-    setStatus('ready')
+    // Fetch invoice details from API
+    fetch(`/api/payment-qr/details?token=${encodeURIComponent(token)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) { setStatus('invalid'); return }
+        setData(d as TokenData)
+        setStatus('ready')
+      })
+      .catch(() => setStatus('invalid'))
   }, [token])
 
   async function handleConfirm() {
