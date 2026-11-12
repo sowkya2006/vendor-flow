@@ -11,9 +11,9 @@ interface GlassKpiCardProps {
   trend?: 'up' | 'down' | 'neutral'
   description?: string
   icon: React.ReactNode
-  gradient: string
-  glowColor: string
-  borderColor: string
+  gradient: string       // e.g. "from-blue-500/20 to-blue-600/10"
+  glowColor: string      // e.g. "rgba(79,140,255,0.25)"
+  borderColor: string    // e.g. "rgba(79,140,255,0.3)"
   index?: number
 }
 
@@ -23,12 +23,15 @@ function useCountUp(target: number, duration = 1200) {
     const el = ref.current
     if (!el) return
     const start = performance.now()
+    const startVal = 0
     function step(now: number) {
       if (!el) return
       const elapsed = now - start
       const progress = Math.min(elapsed / duration, 1)
+      // Ease out cubic
       const eased = 1 - Math.pow(1 - progress, 3)
-      el.textContent = Math.round(target * eased).toLocaleString('en-IN')
+      const current = Math.round(startVal + (target - startVal) * eased)
+      el.textContent = current.toLocaleString('en-IN')
       if (progress < 1) requestAnimationFrame(step)
     }
     requestAnimationFrame(step)
@@ -44,30 +47,52 @@ export function GlassKpiCard({
 
   return (
     <div
-      className="relative rounded-2xl p-5 overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md bg-white"
+      className="relative rounded-2xl p-5 overflow-hidden transition-all duration-300 hover:-translate-y-1"
       style={{
+        background: 'rgba(255,255,255,0.04)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
         border: `1px solid ${borderColor}`,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+        boxShadow: `0 8px 32px rgba(0,0,0,0.3), 0 0 0 0 ${glowColor}`,
+        animationDelay: `${index * 80}ms`,
+      }}
+      onMouseEnter={(e) => {
+        ;(e.currentTarget as HTMLDivElement).style.boxShadow =
+          `0 16px 48px rgba(0,0,0,0.4), 0 0 40px ${glowColor}`
+      }}
+      onMouseLeave={(e) => {
+        ;(e.currentTarget as HTMLDivElement).style.boxShadow =
+          `0 8px 32px rgba(0,0,0,0.3), 0 0 0 0 ${glowColor}`
       }}
     >
-      {/* Soft gradient overlay */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-40 pointer-events-none`} />
+      {/* Background gradient */}
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-60 pointer-events-none`} />
+
+      {/* Top reflection line */}
+      <div className="absolute top-0 left-4 right-4 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
 
       <div className="relative flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-widest mb-2 text-[#94A3B8]">{title}</p>
+          <p className="text-xs font-medium text-white/50 uppercase tracking-wider mb-2">{title}</p>
           <div className="flex items-baseline gap-1">
-            {isCurrency && <span className="text-lg font-semibold text-[#64748B]">₹</span>}
-            <span ref={countRef} className="text-3xl font-bold text-[#2D3748] tracking-tight">0</span>
+            {isCurrency && <span className="text-lg font-semibold text-white/70">₹</span>}
+            <span
+              ref={countRef}
+              className="text-3xl font-bold text-white tracking-tight"
+            >
+              0
+            </span>
           </div>
-          {description && <p className="mt-1.5 text-xs truncate text-[#94A3B8]">{description}</p>}
+          {description && (
+            <p className="mt-1.5 text-xs text-white/40 truncate">{description}</p>
+          )}
         </div>
 
         {/* Icon */}
         <div
           className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl"
           style={{
-            background: glowColor.replace('0.25', '0.12').replace('0.30', '0.12'),
+            background: `linear-gradient(135deg, ${glowColor.replace('0.25', '0.3')}, ${glowColor.replace('0.25', '0.1')})`,
             border: `1px solid ${borderColor}`,
           }}
         >
@@ -75,13 +100,19 @@ export function GlassKpiCard({
         </div>
       </div>
 
-      {/* Trend badge */}
+      {/* Change indicator */}
       {change !== undefined && change !== 0 && (
         <div className="relative mt-3 flex items-center gap-1.5">
-          <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-            trend === 'up' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-          }`}>
-            {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+          <div
+            className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              trend === 'up'
+                ? 'bg-emerald-500/15 text-emerald-400'
+                : 'bg-red-500/15 text-red-400'
+            }`}
+          >
+            {trend === 'up'
+              ? <TrendingUp className="h-3 w-3" />
+              : <TrendingDown className="h-3 w-3" />}
             {Math.abs(change)}% vs last month
           </div>
         </div>

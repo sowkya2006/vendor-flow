@@ -17,31 +17,32 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: [
-          'bg-[#6B8F8A] text-white',
-          'shadow-[0_2px_8px_rgba(107,143,138,0.35)]',
-          'hover:bg-[#5A7E79] hover:shadow-[0_4px_16px_rgba(107,143,138,0.40)]',
+          'bg-gradient-to-br from-[#4F8CFF] to-[#6CA7FF] text-white',
+          'shadow-[0_4px_16px_rgba(79,140,255,0.35)]',
+          'hover:shadow-[0_6px_24px_rgba(79,140,255,0.45)] hover:brightness-110',
         ].join(' '),
         destructive: [
-          'bg-[#E05252] text-white',
-          'shadow-[0_2px_6px_rgba(224,82,82,0.30)]',
-          'hover:bg-[#C94040]',
+          'bg-gradient-to-br from-[#EF4444] to-[#f87171] text-white',
+          'shadow-[0_4px_12px_rgba(239,68,68,0.3)]',
+          'hover:shadow-[0_6px_20px_rgba(239,68,68,0.4)] hover:brightness-110',
         ].join(' '),
         outline: [
-          'border border-[rgba(0,0,0,0.14)] bg-white text-[#374151]',
-          'hover:bg-[rgba(107,143,138,0.08)] hover:border-[rgba(107,143,138,0.40)] hover:text-[#2D3748]',
+          'border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.04)] text-[#E5E7EB]',
+          'backdrop-blur-sm',
+          'hover:bg-[rgba(255,255,255,0.08)] hover:border-[rgba(255,255,255,0.22)] hover:text-white',
         ].join(' '),
         secondary: [
-          'bg-[rgba(107,143,138,0.10)] text-[#374151] border border-[rgba(107,143,138,0.20)]',
-          'hover:bg-[rgba(107,143,138,0.18)] hover:border-[rgba(107,143,138,0.35)]',
+          'bg-[rgba(255,255,255,0.06)] text-[#E5E7EB] border border-[rgba(255,255,255,0.1)]',
+          'hover:bg-[rgba(255,255,255,0.1)] hover:border-[rgba(255,255,255,0.18)]',
         ].join(' '),
         ghost: [
-          'text-[#64748B]',
-          'hover:bg-[rgba(107,143,138,0.08)] hover:text-[#2D3748]',
+          'text-[#AEB4C2]',
+          'hover:bg-[rgba(255,255,255,0.06)] hover:text-[#F5F5F5]',
         ].join(' '),
-        link: 'text-[#6B8F8A] underline-offset-4 hover:underline hover:text-[#5A7E79] p-0 h-auto',
+        link: 'text-[#4F8CFF] underline-offset-4 hover:underline p-0 h-auto',
         success: [
-          'bg-[rgba(107,143,138,0.12)] text-[#3D7A74] border border-[rgba(107,143,138,0.28)]',
-          'hover:bg-[rgba(107,143,138,0.22)]',
+          'bg-[rgba(34,197,94,0.15)] text-[#4ade80] border border-[rgba(34,197,94,0.3)]',
+          'hover:bg-[rgba(34,197,94,0.22)]',
         ].join(' '),
       },
       size: {

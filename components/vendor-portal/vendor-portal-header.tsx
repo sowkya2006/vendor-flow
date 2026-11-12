@@ -116,8 +116,7 @@ export function VendorPortalHeader({ vendorUser, companyName }: {
   const headerCompany = companyName ?? vendorUser.vendor?.name ?? null
 
   return (
-    <header className="h-14 flex items-center justify-between px-5 border-b shrink-0"
-      style={{ background: '#FFFFFF', borderColor: 'rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+    <header className="h-14 flex items-center justify-between px-5 border-b border-[--color-border] bg-[--color-card] shrink-0">
       {/* Left — company + user info */}
       <div className="flex items-center gap-2.5 min-w-0">
         {headerCompany && (
