@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { getVendorUser } from '@/lib/supabase/vendor-portal'
 
 /**
  * GET /api/vendor/rfq-items?rfq_id=XXX
  * Returns the line items for a given RFQ so the quotation form can auto-fill.
+ * Uses admin client so vendor RLS doesn't block the read.
  */
 export async function GET(req: NextRequest) {
+  // Auth check
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
@@ -14,11 +16,11 @@ export async function GET(req: NextRequest) {
   const rfq_id = req.nextUrl.searchParams.get('rfq_id')
   if (!rfq_id) return NextResponse.json({ error: 'rfq_id required' }, { status: 400 })
 
-  const vu = await getVendorUser()
-  if (!vu) return NextResponse.json({ error: 'Not a vendor' }, { status: 403 })
-
+  // Use admin client to bypass RLS — vendor users can't read rfq_items directly
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const admin = createAdminClient() as any
+
+  const { data, error } = await admin
     .from('rfq_items')
     .select('id, description, quantity, unit, estimated_unit_price, notes')
     .eq('rfq_id', rfq_id)

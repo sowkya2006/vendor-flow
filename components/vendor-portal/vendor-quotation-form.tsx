@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -41,6 +41,14 @@ export function VendorQuotationForm({ rfqOptions, defaultRfqId, defaultValues, o
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'items' })
   const watchedItems = watch('items')
   const discount = watch('discount_amount') ?? 0
+
+  // ── Auto-fill on mount if defaultRfqId provided but no items yet ──────────
+  useEffect(() => {
+    if (defaultRfqId && !defaultValues?.items?.length) {
+      handleRfqChange(defaultRfqId)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultRfqId])
 
   const subtotal = watchedItems.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
   const tax = watchedItems.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0) * ((Number(i.tax_percentage) || 0) / 100), 0)
