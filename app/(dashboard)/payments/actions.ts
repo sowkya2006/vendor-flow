@@ -207,7 +207,7 @@ export async function rejectInvoiceAction(id: string, reason: string) {
     const supabase = (await createClient()) as any
     const { data: invoice } = await supabase
       .from('invoices')
-      .select('invoice_number')
+      .select('invoice_number, vendor_id')
       .eq('id', id)
       .maybeSingle()
 
