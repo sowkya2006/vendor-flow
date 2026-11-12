@@ -25,12 +25,12 @@ export const mainNav: NavGroup[] = [
   {
     label: 'Procurement',
     items: [
-      { label: 'Vendors',           href: '/vendors',          iconName: 'Building2'  },
-      { label: 'Discover Vendors',  href: '/vendors/discover', iconName: 'Sparkles'   },
-      { label: 'Vendor Requests',   href: '/vendors/requests', iconName: 'Users'      },
-      { label: 'Products',          href: '/products',         iconName: 'Package'    },
-      { label: 'RFQs',              href: '/rfqs',             iconName: 'FileText'   },
-      { label: 'Quotations',        href: '/quotations',       iconName: 'FileSearch' },
+      { label: 'Vendors',           href: '/vendors',          iconName: 'Building2'    },
+      { label: 'Discover Vendors',  href: '/vendors/discover', iconName: 'Sparkles'     },
+      { label: 'Vendor Requests',   href: '/vendors/requests', iconName: 'Users'        },
+      { label: 'Products',          href: '/products',         iconName: 'Package'      },
+      { label: 'RFQs',              href: '/rfqs',             iconName: 'FileText'     },
+      { label: 'Quotations',        href: '/quotations',       iconName: 'FileSearch'   },
       { label: 'Purchase Orders',   href: '/purchase-orders',  iconName: 'ShoppingCart' },
     ],
   },

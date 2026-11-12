@@ -41,10 +41,7 @@ const ROLE_ALLOWED_HREFS: Record<RoleSlug, string[] | '*'> = {
   procurement_manager: [
     '/dashboard',
     '/notifications',
-    // Procurement — review RFQs, approve quotations, approve POs
-    '/vendors',
-    '/vendors/discover',
-    '/vendors/requests',
+    // Procurement — review and approve RFQs, quotations, POs (NO vendor management)
     '/rfqs',
     '/quotations',
     '/purchase-orders',
@@ -69,9 +66,7 @@ const ROLE_ALLOWED_HREFS: Record<RoleSlug, string[] | '*'> = {
   procurement_officer: [
     '/dashboard',
     '/notifications',
-    '/vendors',
-    '/vendors/discover',
-    '/vendors/requests',
+    // Procurement — create RFQs and POs (NO vendor management)
     '/rfqs',
     '/purchase-orders',
     // Insights — relevant only
