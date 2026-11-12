@@ -2,13 +2,16 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { CreditCard, ArrowLeft } from 'lucide-react'
 import { PageContainer } from '@/components/shared/page-container'
-import { PaymentForm } from '@/components/invoices/payment-form'
+import { PaymentFormWithQR } from '@/components/invoices/payment-form-with-qr'
 import { getInvoiceById } from '@/lib/supabase/invoices'
 import { getCompanyId } from '@/lib/supabase/get-company-id'
 import { recordPaymentAction } from '@/app/(dashboard)/payments/actions'
+import { generatePaymentToken } from '@/lib/payment-qr'
 import type { PaymentFormValues } from '@/lib/validations/invoice'
 
 interface PageProps { params: Promise<{ id: string }> }
+
+export const dynamic = 'force-dynamic'
 
 export default async function RecordPaymentPage({ params }: PageProps) {
   const { id } = await params
@@ -19,6 +22,19 @@ export default async function RecordPaymentPage({ params }: PageProps) {
   if (!['approved', 'partially_paid'].includes(invoice.status)) notFound()
   if (invoice.remaining_amount <= 0) notFound()
 
+  // Generate a signed QR token for this payment
+  const qrToken = generatePaymentToken({
+    invoiceId:     invoice.id,
+    invoiceNumber: invoice.invoice_number,
+    vendorName:    invoice.vendor?.name ?? 'Vendor',
+    amount:        invoice.remaining_amount,
+    currency:      invoice.currency ?? 'INR',
+    companyId,
+  })
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const qrUrl  = `${appUrl}/pay/${qrToken}`
+
   async function handlePayment(values: PaymentFormValues) {
     'use server'
     await recordPaymentAction(values)
@@ -27,7 +43,10 @@ export default async function RecordPaymentPage({ params }: PageProps) {
   return (
     <PageContainer>
       <div className="mb-6">
-        <Link href={`/payments/invoices/${id}`} className="mb-3 inline-flex items-center gap-1.5 text-xs text-[--color-foreground-muted] hover:text-[--color-foreground] transition-colors">
+        <Link
+          href={`/payments/invoices/${id}`}
+          className="mb-3 inline-flex items-center gap-1.5 text-xs text-[--color-foreground-muted] hover:text-[--color-foreground] transition-colors"
+        >
           <ArrowLeft className="h-3.5 w-3.5" />Back to {invoice.invoice_number}
         </Link>
         <div className="flex items-center gap-3">
@@ -37,20 +56,20 @@ export default async function RecordPaymentPage({ params }: PageProps) {
           <div>
             <h1 className="text-xl font-semibold text-[--color-foreground]">Record Payment</h1>
             <p className="text-xs text-[--color-foreground-muted]">
-              {invoice.invoice_number} · {invoice.vendor?.name ?? '—'}
+              {invoice.invoice_number} · {invoice.vendor?.name ?? '—'} · ₹{invoice.remaining_amount.toLocaleString('en-IN')}
             </p>
           </div>
         </div>
       </div>
-      <div className="max-w-md">
-        <PaymentForm
-          invoiceId={invoice.id}
-          invoiceNumber={invoice.invoice_number}
-          remainingAmount={invoice.remaining_amount}
-          currency={invoice.currency}
-          onSubmit={handlePayment}
-        />
-      </div>
+
+      <PaymentFormWithQR
+        invoiceId={invoice.id}
+        invoiceNumber={invoice.invoice_number}
+        remainingAmount={invoice.remaining_amount}
+        currency={invoice.currency}
+        qrUrl={qrUrl}
+        onSubmit={handlePayment}
+      />
     </PageContainer>
   )
 }
