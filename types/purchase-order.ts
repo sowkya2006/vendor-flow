@@ -103,6 +103,8 @@ export interface PurchaseOrderFormData {
   billing_address?: string | null
   payment_terms?: string | null
   notes?: string | null
+  total_amount?: number | null   // Set from quotation grand_total (includes discount)
+  discount_amount?: number | null // Discount from quotation
   items?: PurchaseOrderItemFormData[]
 }
 

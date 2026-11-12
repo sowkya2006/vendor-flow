@@ -89,7 +89,14 @@ export function VendorInvoiceForm({ po, onSubmit }: Props) {
     (s, i) => s + i.quantity * i.unit_price * (i.tax_percentage / 100),
     0,
   )
-  const grandTotal = subtotal + taxAmount
+  // Carry over the discount from the PO (which got it from the quotation).
+  // If the PO total_amount < items subtotal + tax, the difference is the discount.
+  const rawTotal = subtotal + taxAmount
+  const poTotal = po.total_amount ?? rawTotal
+  const discountAmount = rawTotal > poTotal && rawTotal - poTotal > 0.01
+    ? Math.round((rawTotal - poTotal) * 100) / 100
+    : 0
+  const grandTotal = rawTotal - discountAmount
 
   // Only validate / register the fields the vendor actually types
   const { register, handleSubmit, formState: { errors } } = useForm<VendorFields>({defaultValues: {
@@ -126,7 +133,7 @@ export function VendorInvoiceForm({ po, onSubmit }: Props) {
       purchase_order_id: po.id,
       grn_id: grn?.id ?? null,
       currency: 'INR',
-      discount_amount: 0,
+      discount_amount: discountAmount,
       notes: fields.notes || null,
       invoice_pdf_url: fields.invoice_pdf_url || null,
       tax_invoice_url: fields.tax_invoice_url || null,
@@ -191,6 +198,9 @@ export function VendorInvoiceForm({ po, onSubmit }: Props) {
             <p className="font-bold text-lg text-[--color-foreground]">{formatCurrency(grandTotal)}</p>
             <p className="text-[--color-foreground-muted]">
               {autoItems.length} item{autoItems.length !== 1 ? 's' : ''}
+              {discountAmount > 0 && (
+                <span className="ml-1 text-emerald-600">(incl. −{formatCurrency(discountAmount)} discount)</span>
+              )}
             </p>
           </div>
         </div>

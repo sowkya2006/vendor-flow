@@ -132,6 +132,8 @@ export async function createPurchaseOrder(
       billing_address: data.billing_address || null,
       payment_terms: data.payment_terms || null,
       notes: data.notes || null,
+      // Store the discounted total from quotation if provided
+      ...(data.total_amount != null && { total_amount: data.total_amount }),
       status: 'draft',
       vendor_acceptance: 'pending',
     })

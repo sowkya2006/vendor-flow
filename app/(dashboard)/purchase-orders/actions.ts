@@ -59,11 +59,13 @@ export async function createPurchaseOrderFromQuotationAction(input: unknown) {
   const { createClient } = await import('@/lib/supabase/server')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase = (await createClient()) as any
+  // Fetch quotation with discount info
   const { data: quotation } = await supabase
     .from('quotations')
     .select(`id, quotation_number, vendor_id, rfq_id, status,
-      grand_total, payment_terms, delivery_days,
-      items:quotation_items(item_name, description, quantity, unit, unit_price, tax_pct)`)
+      grand_total, subtotal, tax_amount, discount_amount, discount_type, discount_value,
+      payment_terms, delivery_days,
+      items:quotation_items(item_name, description, quantity, unit, unit_price, tax_pct, discount_pct, discount_amount, line_total)`)
     .eq('id', parsed.data.quotation_id)
     .eq('company_id', companyId)
     .single()
@@ -73,16 +75,26 @@ export async function createPurchaseOrderFromQuotationAction(input: unknown) {
     throw new Error('Only approved quotations can be used to create a Purchase Order')
   }
 
+  // Build discount note so it's visible on the PO
+  const discountNote = quotation.discount_amount > 0
+    ? `Discount applied from quotation ${quotation.quotation_number}: −₹${Number(quotation.discount_amount).toLocaleString('en-IN')} (${quotation.discount_type === 'percentage' ? `${quotation.discount_value}%` : 'fixed'})`
+    : null
+
   const poData: PurchaseOrderFormData = {
     vendor_id: quotation.vendor_id,
     rfq_id: quotation.rfq_id ?? null,
     quotation_id: parsed.data.quotation_id,
     due_date: parsed.data.due_date ?? null,
     payment_terms: quotation.payment_terms ?? null,
-    notes: parsed.data.notes ?? null,
+    // Combine user notes with discount note
+    notes: [parsed.data.notes, discountNote].filter(Boolean).join('\n') || null,
+    // Use the quotation's grand_total as the PO total — this includes the discount
+    total_amount: quotation.grand_total ?? null,
+    discount_amount: quotation.discount_amount ?? 0,
     items: (quotation.items ?? []).map((item: {
       item_name: string; description: string | null
-      quantity: number; unit: string | null; unit_price: number
+      quantity: number; unit: string | null; unit_price: number; tax_pct: number
+      discount_pct: number; discount_amount: number; line_total: number
     }) => ({
       description: item.item_name ?? item.description ?? 'Item',
       quantity: item.quantity,

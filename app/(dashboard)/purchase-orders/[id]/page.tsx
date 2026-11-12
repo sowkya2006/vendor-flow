@@ -193,6 +193,24 @@ export default async function PurchaseOrderDetailPage({
                     </tbody>
                     {po!.total_amount != null && (
                       <tfoot>
+                        {/* Subtotal row */}
+                        <tr className="border-t border-[--color-border] bg-[--color-background-subtle]">
+                          <td colSpan={4} className="px-6 py-2 text-right text-xs font-medium text-[--color-foreground-muted]">Subtotal</td>
+                          <td className="px-6 py-2 text-right text-xs tabular-nums text-[--color-foreground-muted]">
+                            {formatCurrency(po!.items!.reduce((s, i) => s + i.quantity * i.unit_price, 0))}
+                          </td>
+                        </tr>
+                        {/* Discount row — shown when total_amount < sum of items */}
+                        {(() => {
+                          const itemsTotal = po!.items!.reduce((s, i) => s + i.quantity * i.unit_price, 0)
+                          const discount = itemsTotal - po!.total_amount!
+                          return discount > 0.01 ? (
+                            <tr className="bg-[--color-background-subtle]">
+                              <td colSpan={4} className="px-6 py-2 text-right text-xs font-medium text-emerald-600">Discount</td>
+                              <td className="px-6 py-2 text-right text-xs tabular-nums text-emerald-600">− {formatCurrency(discount)}</td>
+                            </tr>
+                          ) : null
+                        })()}
                         <tr className="border-t-2 border-[--color-border] bg-[--color-background-subtle]">
                           <td colSpan={4} className="px-6 py-3 text-right text-xs font-semibold text-[--color-foreground-muted]">Order Total</td>
                           <td className="px-6 py-3 text-right text-sm font-bold text-[--color-foreground]">{formatCurrency(po!.total_amount)}</td>
