@@ -17,11 +17,31 @@ async function acceptAction(requestId: string) {
   const user = await getUser()
   const companyId = await getCompanyId()
 
-  // Get vendor details before accepting (for the notification)
-  const { getIncomingCollaborationRequests } = await import('@/lib/supabase/vendor-registration')
-  const requests = await getIncomingCollaborationRequests(companyId)
-  const req = requests.find(r => r.id === requestId)
-  const vc = req?.vendor_company as { id: string; company_name: string; email: string; user_id: string } | null
+  // Get vendor details using admin client (bypasses RLS) BEFORE accepting
+  const { createAdminClient } = await import('@/lib/supabase/admin')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = createAdminClient() as any
+
+  const { data: reqRow } = await db
+    .from('collaboration_requests')
+    .select('vendor_company_id, vendor_user_id')
+    .eq('id', requestId)
+    .maybeSingle()
+
+  // Get vendor_company row to get the vendor's auth user_id
+  let vendorAuthUserId: string | null = null
+  let vendorCompanyName = 'A vendor'
+  if (reqRow?.vendor_company_id) {
+    const { data: vcRow } = await db
+      .from('vendor_companies')
+      .select('user_id, company_name')
+      .eq('id', reqRow.vendor_company_id)
+      .maybeSingle()
+    vendorAuthUserId = vcRow?.user_id ?? reqRow?.vendor_user_id ?? null
+    vendorCompanyName = vcRow?.company_name ?? 'A vendor'
+  } else if (reqRow?.vendor_user_id) {
+    vendorAuthUserId = reqRow.vendor_user_id
+  }
 
   await acceptCollaborationRequest(requestId, user.id)
 
@@ -30,31 +50,33 @@ async function acceptAction(requestId: string) {
   await notifyAllWithRole(companyId, 'administrator', {
     type: 'vendor_approved',
     title: 'Vendor collaboration accepted',
-    message: `${vc?.company_name ?? 'A vendor'} has been accepted as a vendor. They can now receive RFQs.`,
+    message: `${vendorCompanyName} has been accepted as a vendor. They can now receive RFQs.`,
     link: '/vendors',
     entityType: 'vendor',
   })
 
-  // Notify the vendor directly — they need to know their request was accepted
-  if (vc?.user_id) {
+  // Notify the vendor — insert directly with their confirmed auth user_id
+  if (vendorAuthUserId) {
     try {
-      const { createAdminClient } = await import('@/lib/supabase/admin')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = createAdminClient() as any
       await db.from('approval_notifications').insert({
-        company_id: companyId,
-        recipient_id: vc.user_id,
-        request_id: null,
-        type: 'vendor_approved',
-        title: 'Collaboration Request Accepted! 🎉',
-        body: `Your collaboration request has been accepted. You can now receive RFQs, submit quotations, and work with this company on VendorFlow.`,
-        link: '/vendor/companies',
+        company_id:  companyId,
+        recipient_id: vendorAuthUserId,
+        request_id:  null,
+        type:        'vendor_approved',
+        title:       'Collaboration Request Accepted! 🎉',
+        body:        `Your collaboration request has been accepted by the company. You can now receive RFQs, submit quotations, and work through the full procurement cycle on VendorFlow.`,
+        link:        '/vendor/companies',
         entity_type: 'vendor_request',
-        entity_id: requestId,
-        is_read: false,
-        sent_at: new Date().toISOString(),
+        entity_id:   requestId,
+        is_read:     false,
+        sent_at:     new Date().toISOString(),
       })
-    } catch { /* non-critical */ }
+      console.log('[acceptAction] Vendor notification sent to:', vendorAuthUserId)
+    } catch (e) {
+      console.error('[acceptAction] Failed to notify vendor:', e)
+    }
+  } else {
+    console.warn('[acceptAction] Could not find vendor auth user_id for request:', requestId)
   }
 
   revalidatePath('/vendors/requests')
@@ -66,32 +88,46 @@ async function rejectAction(requestId: string, reason: string) {
   const user = await getUser()
   const companyId = await getCompanyId()
 
-  // Get vendor details before rejecting
-  const { getIncomingCollaborationRequests } = await import('@/lib/supabase/vendor-registration')
-  const requests = await getIncomingCollaborationRequests(companyId)
-  const req = requests.find(r => r.id === requestId)
-  const vc = req?.vendor_company as { id: string; company_name: string; user_id: string } | null
+  // Get vendor details using admin client
+  const { createAdminClient } = await import('@/lib/supabase/admin')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = createAdminClient() as any
+
+  const { data: reqRow } = await db
+    .from('collaboration_requests')
+    .select('vendor_company_id, vendor_user_id')
+    .eq('id', requestId)
+    .maybeSingle()
+
+  let vendorAuthUserId: string | null = null
+  if (reqRow?.vendor_company_id) {
+    const { data: vcRow } = await db
+      .from('vendor_companies')
+      .select('user_id')
+      .eq('id', reqRow.vendor_company_id)
+      .maybeSingle()
+    vendorAuthUserId = vcRow?.user_id ?? reqRow?.vendor_user_id ?? null
+  } else if (reqRow?.vendor_user_id) {
+    vendorAuthUserId = reqRow.vendor_user_id
+  }
 
   await rejectCollaborationRequest(requestId, user.id, reason || undefined)
 
-  // Notify the vendor that their request was rejected
-  if (vc?.user_id) {
+  // Notify the vendor
+  if (vendorAuthUserId) {
     try {
-      const { createAdminClient } = await import('@/lib/supabase/admin')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = createAdminClient() as any
       await db.from('approval_notifications').insert({
-        company_id: companyId,
-        recipient_id: vc.user_id,
-        request_id: null,
-        type: 'vendor_rejected',
-        title: 'Collaboration Request Not Accepted',
-        body: `Your collaboration request was not accepted at this time. Reason: ${reason || 'Not specified'}. You can try sending a request to other companies.`,
-        link: '/vendor/companies',
+        company_id:  companyId,
+        recipient_id: vendorAuthUserId,
+        request_id:  null,
+        type:        'vendor_rejected',
+        title:       'Collaboration Request Not Accepted',
+        body:        `Your collaboration request was not accepted at this time. Reason: ${reason || 'Not specified'}. You can try sending a request to other companies.`,
+        link:        '/vendor/companies',
         entity_type: 'vendor_request',
-        entity_id: requestId,
-        is_read: false,
-        sent_at: new Date().toISOString(),
+        entity_id:   requestId,
+        is_read:     false,
+        sent_at:     new Date().toISOString(),
       })
     } catch { /* non-critical */ }
   }
