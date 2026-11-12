@@ -68,21 +68,20 @@ function SidebarItem({ item, collapsed }: { item: NavItem; collapsed: boolean })
         collapsed && 'justify-center px-0 w-10 mx-auto rounded-xl',
       )}
       style={isActive ? {
-        background: 'rgba(79,140,255,0.15)',
-        border: '1px solid rgba(79,140,255,0.35)',
-        boxShadow: '0 0 12px rgba(79,140,255,0.12), inset 0 1px 0 rgba(255,255,255,0.08)',
-        color: '#93c5fd',
+        background: 'rgba(255,255,255,0.18)',
+        border: '1px solid rgba(255,255,255,0.30)',
+        color: '#FFFFFF',
       } : undefined}
     >
-      {/* Active left glow bar */}
+      {/* Active left bar */}
       {isActive && !collapsed && (
-        <span className="absolute left-0 inset-y-2 w-[3px] rounded-r-full" style={{ background: 'linear-gradient(to bottom, #93c5fd, #4F8CFF)' }} />
+        <span className="absolute left-0 inset-y-2 w-[3px] rounded-r-full bg-white" />
       )}
 
       <NavIcon
         name={item.iconName}
         className={cn('shrink-0 transition-colors')}
-        style={isActive ? { color: '#93c5fd' } : undefined}
+        style={isActive ? { color: '#FFFFFF' } : undefined}
       />
 
       <AnimatePresence initial={false}>
@@ -162,7 +161,7 @@ export function Sidebar({
           )}
         >
           {/* Logo mark */}
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #4F8CFF, #8B5CF6)', boxShadow: '0 2px 12px rgba(79,140,255,0.4)' }}>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: 'rgba(255,255,255,0.20)' }}>
             <Zap className="h-[15px] w-[15px] text-white" />
           </div>
 
