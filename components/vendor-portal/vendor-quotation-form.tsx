@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useTransition, useEffect, useCallback } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Plus, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { createVendorQuotationSchema } from '@/lib/validations/vendor-portal'
 import type { CreateVendorQuotationInput } from '@/lib/validations/vendor-portal'
 import { Button } from '@/components/ui/button'
@@ -14,82 +14,73 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCurrency } from '@/lib/utils'
 
-interface RfqItem {
-  description: string
-  quantity: number
-  unit_price: number
-  tax_percentage: number
-}
+type LineItem = { description: string; quantity: number; unit_price: number; tax_percentage: number }
 
 interface Props {
-  rfqOptions: Array<{ id: string; rfq_number: string; title: string }>
+  rfqOptions:   Array<{ id: string; rfq_number: string; title: string }>
+  rfqItemsMap?: Record<string, LineItem[]>   // pre-loaded server-side — no fetch needed
   defaultRfqId?: string
   defaultValues?: Partial<CreateVendorQuotationInput>
   onSubmit: (values: CreateVendorQuotationInput) => Promise<void>
   submitLabel?: string
 }
 
-export function VendorQuotationForm({ rfqOptions, defaultRfqId, defaultValues, onSubmit, submitLabel = 'Save Quotation' }: Props) {
+export function VendorQuotationForm({
+  rfqOptions,
+  rfqItemsMap = {},
+  defaultRfqId,
+  defaultValues,
+  onSubmit,
+  submitLabel = 'Save Quotation',
+}: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
-  const [loadingItems, setLoadingItems] = useState(false)
 
   const { register, handleSubmit, control, watch, setValue, formState: { errors } } = useForm<CreateVendorQuotationInput>({
     resolver: zodResolver(createVendorQuotationSchema),
     defaultValues: {
-      rfq_id: defaultRfqId ?? null,
+      rfq_id:          defaultRfqId ?? null,
       discount_amount: 0,
-      items: [{ description: '', quantity: 1, unit_price: 0, tax_percentage: 0 }],
+      items: defaultValues?.items ?? [{ description: '', quantity: 1, unit_price: 0, tax_percentage: 0 }],
       ...defaultValues,
     },
   })
 
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'items' })
-  const watchedItems = watch('items')
-  const discount = watch('discount_amount') ?? 0
+  const watchedItems  = watch('items')
+  const watchedRfqId  = watch('rfq_id')
+  const discount      = watch('discount_amount') ?? 0
 
   const subtotal = watchedItems.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
-  const tax = watchedItems.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0) * ((Number(i.tax_percentage) || 0) / 100), 0)
-  const total = subtotal + tax - (Number(discount) || 0)
+  const tax      = watchedItems.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0) * ((Number(i.tax_percentage) || 0) / 100), 0)
+  const total    = subtotal + tax - (Number(discount) || 0)
 
-  // ── Fetch RFQ items ────────────────────────────────────────────────────────
-  const fetchAndFillRfqItems = useCallback(async (rfqId: string) => {
-    if (!rfqId) return
-    setLoadingItems(true)
-    try {
-      const res = await fetch(`/api/vendor/rfq-items?rfq_id=${encodeURIComponent(rfqId)}`)
-      if (!res.ok) return
-      const data: { items: RfqItem[] } = await res.json()
-      if (data.items && data.items.length > 0) {
-        replace(data.items.map((item) => ({
-          description:    item.description,
-          quantity:       item.quantity,
-          unit_price:     item.unit_price,
-          tax_percentage: item.tax_percentage ?? 0,
-        })))
-      }
-    } catch { /* non-critical */ } finally {
-      setLoadingItems(false)
-    }
-  }, [replace])
-
-  // Auto-fill on mount when defaultRfqId provided
+  // ── Auto-fill on mount when defaultRfqId provided ─────────────────────────
   useEffect(() => {
-    if (defaultRfqId && !defaultValues?.items?.length) {
-      fetchAndFillRfqItems(defaultRfqId)
+    if (!defaultRfqId) return
+    const items = rfqItemsMap[defaultRfqId]
+    if (items && items.length > 0 && !defaultValues?.items?.length) {
+      replace(items)
     }
-  }, [defaultRfqId, defaultValues?.items?.length, fetchAndFillRfqItems])
+  // Only run once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Handle dropdown change
-  async function handleRfqChange(value: string) {
+  // ── Handle RFQ dropdown change ────────────────────────────────────────────
+  function handleRfqChange(value: string) {
     const rfqId = value === 'none' ? null : value
     setValue('rfq_id', rfqId)
+
     if (!rfqId) {
       replace([{ description: '', quantity: 1, unit_price: 0, tax_percentage: 0 }])
       return
     }
-    await fetchAndFillRfqItems(rfqId)
+
+    const items = rfqItemsMap[rfqId]
+    if (items && items.length > 0) {
+      replace(items)
+    }
   }
 
   function handleSubmitForm(values: CreateVendorQuotationInput) {
@@ -123,6 +114,11 @@ export function VendorQuotationForm({ rfqOptions, defaultRfqId, defaultValues, o
                 </SelectContent>
               </Select>
             )} />
+            {watchedRfqId && rfqItemsMap[watchedRfqId]?.length > 0 && (
+              <p className="text-[11px] text-emerald-600 mt-1">
+                ✓ {rfqItemsMap[watchedRfqId].length} item{rfqItemsMap[watchedRfqId].length !== 1 ? 's' : ''} loaded from RFQ
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="valid_until">Valid Until</Label>
@@ -142,27 +138,18 @@ export function VendorQuotationForm({ rfqOptions, defaultRfqId, defaultValues, o
       {/* Line items */}
       <div className="rounded-xl border border-[--color-border] bg-[--color-card] p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-[--color-foreground]">Line Items</h3>
-            {loadingItems && (
-              <span className="flex items-center gap-1 text-xs text-[--color-primary]">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Loading from RFQ…
-              </span>
-            )}
-          </div>
+          <h3 className="text-sm font-semibold text-[--color-foreground]">Line Items</h3>
           <Button
             type="button" size="sm" variant="outline"
             onClick={() => append({ description: '', quantity: 1, unit_price: 0, tax_percentage: 0 })}
-            disabled={loadingItems}
           >
             <Plus className="h-3.5 w-3.5 mr-1" />Add Item
           </Button>
         </div>
 
-        {!watch('rfq_id') && (
+        {!watchedRfqId && (
           <p className="text-xs text-[--color-foreground-muted] bg-[--color-background-subtle] rounded-lg px-3 py-2">
-            💡 Select an RFQ above to automatically fill line items
+            💡 Select an RFQ above to automatically fill line items from the request
           </p>
         )}
 
@@ -189,8 +176,8 @@ export function VendorQuotationForm({ rfqOptions, defaultRfqId, defaultValues, o
                 <p className="text-[11px] text-right text-[--color-foreground-muted] mt-0.5">Line: {formatCurrency(lineTotal)}</p>
               </div>
               <Input type="number" step="0.001" min="0" {...register(`items.${index}.quantity`)} className="h-8 text-xs" />
-              <Input type="number" step="0.01"  min="0" {...register(`items.${index}.unit_price`)} placeholder="Price" className="h-8 text-xs" />
-              <Input type="number" step="0.01"  min="0" max="100" {...register(`items.${index}.tax_percentage`)} className="h-8 text-xs" placeholder="0" />
+              <Input type="number" step="0.01" min="0" {...register(`items.${index}.unit_price`)} placeholder="Enter price" className="h-8 text-xs" />
+              <Input type="number" step="0.01" min="0" max="100" {...register(`items.${index}.tax_percentage`)} className="h-8 text-xs" placeholder="0" />
               <Button
                 type="button" variant="ghost" size="icon"
                 className="h-8 w-8 text-red-500 hover:bg-red-50"
@@ -225,7 +212,7 @@ export function VendorQuotationForm({ rfqOptions, defaultRfqId, defaultValues, o
         <Button type="button" variant="outline" onClick={() => router.back()} disabled={isPending}>
           Cancel
         </Button>
-        <Button type="submit" disabled={isPending || loadingItems}>
+        <Button type="submit" disabled={isPending}>
           {isPending ? 'Saving…' : submitLabel}
         </Button>
       </div>
