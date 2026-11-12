@@ -108,10 +108,13 @@ export function VendorCompleteProfileForm({ userEmail, userId }: Props) {
           <select
             id="cp-industry"
             {...register('industry')}
-            className="w-full h-9 rounded-lg border border-white/[0.12] bg-[#0f1623] text-[#E5E7EB] px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4F8CFF]/50"
+            className="w-full h-9 rounded-lg border border-[--color-border] bg-[--color-card] text-[--color-foreground] px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[--color-ring]"
+            style={{ colorScheme: 'dark' }}
           >
-            <option value="">Select…</option>
-            {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+            <option value="" style={{ background: 'var(--color-card, #1a2035)', color: 'var(--color-foreground, #fff)' }}>Select…</option>
+            {INDUSTRIES.map(i => (
+              <option key={i} value={i} style={{ background: 'var(--color-card, #1a2035)', color: 'var(--color-foreground, #fff)' }}>{i}</option>
+            ))}
           </select>
         </div>
         <div className="space-y-1.5">
