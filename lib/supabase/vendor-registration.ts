@@ -252,3 +252,113 @@ export async function rejectCollaborationRequest(
     .eq('id', requestId)
   if (error) throw error
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DISCOVER VENDORS (company browses all registered vendor_companies)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PublicVendorCompany {
+  id: string
+  company_name: string
+  contact_name: string | null
+  email: string
+  phone: string | null
+  website: string | null
+  industry: string | null
+  description: string | null
+  status: string
+  created_at: string
+}
+
+export async function getPublicVendorCompanies(
+  page = 1,
+  pageSize = 20,
+  search?: string,
+  industry?: string,
+): Promise<{ data: PublicVendorCompany[]; total: number }> {
+  // Use service role so company users can browse all vendors (bypasses RLS)
+  const supabase = serviceDb()
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase as any)
+    .from('vendor_companies')
+    .select('id, company_name, contact_name, email, phone, website, industry, description, status, created_at', { count: 'exact' })
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .range(from, to)
+
+  if (search) query = query.ilike('company_name', `%${search}%`)
+  if (industry) query = query.eq('industry', industry)
+
+  const { data, error, count } = await query
+
+  if (error) {
+    console.warn('[getPublicVendorCompanies] error:', error.message)
+    return { data: [], total: 0 }
+  }
+
+  return { data: (data ?? []) as PublicVendorCompany[], total: count ?? 0 }
+}
+
+/**
+ * Get the collaboration request status between a company and a vendor_company.
+ * Returns null if no request exists.
+ */
+export async function getCollaborationStatus(
+  companyId: string,
+  vendorCompanyId: string,
+): Promise<{ id: string; status: string } | null> {
+  const supabase = serviceDb()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
+    .from('collaboration_requests')
+    .select('id, status')
+    .eq('company_id', companyId)
+    .eq('vendor_company_id', vendorCompanyId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data as { id: string; status: string } | null
+}
+
+/**
+ * Company sends a collaboration request to a vendor.
+ * This is the reverse of sendCollaborationRequest (which is vendor→company).
+ * We reuse the same collaboration_requests table but source is the company.
+ * vendor_user_id is set to the vendor_company's user_id so the vendor can see it.
+ */
+export async function sendCompanyToVendorRequest(
+  companyId: string,
+  vendorCompanyId: string,
+  message?: string,
+): Promise<CollaborationRequest> {
+  const supabase = serviceDb()
+
+  // Look up the vendor_company to get their user_id
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: vc } = await (supabase as any)
+    .from('vendor_companies')
+    .select('user_id')
+    .eq('id', vendorCompanyId)
+    .maybeSingle()
+
+  const vendorUserId = (vc as { user_id: string } | null)?.user_id ?? vendorCompanyId
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('collaboration_requests')
+    .upsert({
+      vendor_user_id: vendorUserId,
+      vendor_company_id: vendorCompanyId,
+      company_id: companyId,
+      status: 'pending',
+      message: message ?? null,
+    }, { onConflict: 'vendor_company_id,company_id' })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as CollaborationRequest
+}

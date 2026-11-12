@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Building2, Package, FileText, FileSearch,
   ShoppingCart, Warehouse, CreditCard, BarChart3, Settings,
   ClipboardList, Clock, ShieldCheck, GitBranch, ChevronLeft,
-  Zap, TrendingDown, AlertTriangle, History, Users, Bell,
+  Zap, TrendingDown, AlertTriangle, History, Users, Bell, Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -23,7 +23,7 @@ const iconMap: Record<string, LucideIcon> = {
   LayoutDashboard, Building2, Package, FileText, FileSearch,
   ShoppingCart, Warehouse, CreditCard, BarChart3, Settings,
   ClipboardList, Clock, ShieldCheck, GitBranch, TrendingDown,
-  AlertTriangle, History, Users, Bell,
+  AlertTriangle, History, Users, Bell, Sparkles,
 }
 
 function NavIcon({ name, className, style }: { name: string; className?: string; style?: React.CSSProperties }) {
