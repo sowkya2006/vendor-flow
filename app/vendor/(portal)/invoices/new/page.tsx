@@ -6,7 +6,7 @@ import { getVendorUser } from '@/lib/supabase/vendor-portal'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { VendorInvoiceForm } from '@/components/vendor-portal/vendor-invoice-form'
 import { createVendorInvoiceAction } from '@/app/vendor/actions'
-import type { POForInvoice } from '@/lib/supabase/vendor-portal'
+import type { POForInvoice } from '@/types/vendor-portal-types'
 
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = { title: 'Create Invoice' }
