@@ -99,8 +99,10 @@ export function VendorInvoiceForm({ po, onSubmit }: Props) {
   const grandTotal = rawTotal - discountAmount
 
   // Only validate / register the fields the vendor actually types
-  const { register, handleSubmit, formState: { errors } } = useForm<VendorFields>({defaultValues: {
-      invoice_number: '',
+  const { register, handleSubmit, formState: { errors } } = useForm<VendorFields>({
+    defaultValues: {
+      // Auto-generate a unique invoice number using timestamp to avoid duplicates
+      invoice_number: `INV-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
       invoice_date: new Date().toISOString().slice(0, 10),
       due_date: null,
       notes: null,

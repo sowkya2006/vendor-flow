@@ -23,7 +23,12 @@ export function VendorInvoiceFormWrapper({ po }: Props) {
     const data = await res.json()
 
     if (!res.ok) {
-      throw new Error(data.error ?? 'Failed to create invoice')
+      // Make duplicate invoice number error user-friendly
+      const msg = data.error ?? 'Failed to create invoice'
+      if (msg.includes('duplicate key') && msg.includes('invoice_number')) {
+        throw new Error('Invoice number already exists. Please use a different invoice number (e.g. INV-2026-003).')
+      }
+      throw new Error(msg)
     }
 
     toast.success('Invoice created successfully!')
