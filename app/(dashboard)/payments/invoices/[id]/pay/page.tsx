@@ -21,10 +21,15 @@ export default async function RecordPaymentPage({ params }: PageProps) {
   if (!['approved', 'partially_paid'].includes(invoice.status)) notFound()
   if (invoice.remaining_amount <= 0) notFound()
 
-  // Generate a short scannable QR URL — just encode invoiceId + companyId as a short base64
-  // The confirmation API validates everything server-side using the invoice record
+  // Generate a short scannable QR URL
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  const shortPayload = Buffer.from(JSON.stringify({ i: invoice.id, c: companyId })).toString('base64url')
+  // Encode as standard base64url (no padding) for maximum URL compatibility
+  const payload = JSON.stringify({ i: invoice.id, c: companyId })
+  const shortPayload = Buffer.from(payload)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '')
   const qrUrl = `${appUrl}/pay/${shortPayload}`
 
   async function handlePayment(values: PaymentFormValues) {

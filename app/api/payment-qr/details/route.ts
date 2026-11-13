@@ -15,8 +15,10 @@ export async function GET(req: NextRequest) {
     let invoiceId: string
     let companyId: string
     try {
-      const pad = token.replace(/-/g, '+').replace(/_/g, '/') + '=='.slice((token.length % 4))
-      const decoded = Buffer.from(pad, 'base64').toString('utf8')
+      // Convert base64url to standard base64 and decode
+      let b64 = token.replace(/-/g, '+').replace(/_/g, '/')
+      while (b64.length % 4 !== 0) b64 += '='
+      const decoded = Buffer.from(b64, 'base64').toString('utf8')
       const data = JSON.parse(decoded)
       invoiceId = data.i
       companyId = data.c

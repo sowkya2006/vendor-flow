@@ -23,25 +23,19 @@ interface TokenData {
 
 type Status = 'loading' | 'ready' | 'confirming' | 'success' | 'error' | 'invalid'
 
-// Decode the short token: base64url({ i: invoiceId, c: companyId })
-// Then fetch invoice details from the API
+// Decode the short token in the browser using only browser APIs
 function decodeShortToken(token: string): { invoiceId: string; companyId: string } | null {
   try {
-    const decoded = Buffer.from(token, 'base64url').toString('utf8')
+    // Convert base64url to standard base64
+    let b64 = token.replace(/-/g, '+').replace(/_/g, '/')
+    // Add padding
+    while (b64.length % 4 !== 0) b64 += '='
+    const decoded = atob(b64)
     const data = JSON.parse(decoded)
     if (!data.i || !data.c) return null
     return { invoiceId: data.i, companyId: data.c }
   } catch {
-    // Also try atob for browser
-    try {
-      const pad = token.replace(/-/g, '+').replace(/_/g, '/')
-      const decoded = atob(pad + '=='.slice((pad.length % 4)))
-      const data = JSON.parse(decoded)
-      if (!data.i || !data.c) return null
-      return { invoiceId: data.i, companyId: data.c }
-    } catch {
-      return null
-    }
+    return null
   }
 }
 
