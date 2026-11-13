@@ -21,31 +21,35 @@ export default async function NewVendorInvoicePage({ searchParams }: PageProps) 
 
   const { po_id } = await searchParams
 
-  // Fetch all eligible POs for this vendor using admin client
-  // This bypasses vendor_id mismatches that affect self-registered vendors
-  const allPOs = await fetchAllVendorPOs(vu)
-
-  // If a specific PO is requested, use the direct fetch for full data
+  // Wrap all data fetching — never crash the page
+  let allPOs: POForInvoice[] = []
   let selectedPO: POForInvoice | null = null
-  if (po_id) {
-    selectedPO = await fetchPOForInvoiceDirect(po_id)
-    // Fallback: find in allPOs list
-    if (!selectedPO) selectedPO = allPOs.find((p) => p.id === po_id) ?? null
+
+  try {
+    allPOs = await fetchAllVendorPOs(vu)
+  } catch (e) {
+    console.error('[InvoiceNew] fetchAllVendorPOs failed:', e)
   }
 
-  // Auto-select: if no po_id and exactly one eligible PO exists, show form directly
-  if (!selectedPO && !po_id) {
-    const eligible = allPOs.filter((p) => p.vendor_acceptance === 'accepted')
-    if (eligible.length === 1) {
-      // Fetch with full data
-      selectedPO = await fetchPOForInvoiceDirect(eligible[0].id)
-    } else if (eligible.length > 1) {
-      // Multiple POs — prefer the one with a completed GRN
-      const withGrn = eligible.filter((p) => p.completed_grn !== null)
-      if (withGrn.length === 1) {
-        selectedPO = await fetchPOForInvoiceDirect(withGrn[0].id)
+  try {
+    if (po_id) {
+      selectedPO = await fetchPOForInvoiceDirect(po_id)
+      if (!selectedPO) selectedPO = allPOs.find((p) => p.id === po_id) ?? null
+    }
+
+    if (!selectedPO && !po_id) {
+      const eligible = allPOs.filter((p) => p.vendor_acceptance === 'accepted')
+      if (eligible.length === 1) {
+        selectedPO = await fetchPOForInvoiceDirect(eligible[0].id)
+      } else if (eligible.length > 1) {
+        const withGrn = eligible.filter((p) => p.completed_grn !== null)
+        if (withGrn.length === 1) {
+          selectedPO = await fetchPOForInvoiceDirect(withGrn[0].id)
+        }
       }
     }
+  } catch (e) {
+    console.error('[InvoiceNew] PO selection failed:', e)
   }
 
   const posAwaitingAcceptance = allPOs.filter(
